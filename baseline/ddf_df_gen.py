@@ -7,6 +7,42 @@ import copy
 def generate_ddf_df():
     """Define the sequences for each field"""
 
+
+    short_squences = [
+        {
+            "u": 3,
+            "season_length": 225,
+            "flush_length": 2.0,
+            "g_depth_limit": 23.5,
+            "n_sequences": 33,
+        },
+        {
+            "y": 2,
+            "season_length": 225,
+            "flush_length": 2.0,
+            "g_depth_limit": 23.5,
+            "n_sequences": 33,
+        },
+        {
+            "g": 2,
+            "i": 2,
+            "season_length": 225,
+            "flush_length": 0.5,
+            "g_depth_limit": 22.8,
+            "n_sequences": 56,
+            "even_odd": "even",
+        },
+        {
+            "r": 2,
+            "z": 2,
+            "season_length": 225,
+            "flush_length": 0.5,
+            "g_depth_limit": 22.8,
+            "n_sequences": 56,
+            "even_odd": "odd",
+        },
+    ]
+
     shallow_squences = [
         {
             "u": 3,
@@ -132,12 +168,19 @@ def generate_ddf_df():
         },
     ]
 
+    short_seasons = {
+        "XMM_LSS": [0, 10],
+        "ELAISS1": [0, 10],
+        "ECDFS": [0, 10],
+        "EDFS_a": [0, 10],
+    }
+
     shallow_seasons = {
         "COSMOS": [0, 4, 5, 6, 7, 8, 9, 10],
-        "XMM_LSS": [0, 1, 2, 3, 5, 6, 7, 8, 9, 10],
-        "ELAISS1": [0, 1, 2, 3, 4, 6, 7, 8, 9, 10],
-        "ECDFS": [0, 1, 2, 3, 4, 5, 7, 8, 9, 10],
-        "EDFS_a": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "XMM_LSS": [1, 2, 3, 5, 6, 7, 8, 9],
+        "ELAISS1": [1, 2, 3, 4, 6, 7, 8, 9],
+        "ECDFS": [1, 2, 3, 4, 5, 7, 8, 9],
+        "EDFS_a": [2, 3, 4, 5, 6, 7, 8, 9],
     }
 
     deep_seasons = {
@@ -149,6 +192,22 @@ def generate_ddf_df():
     }
 
     dataframes = []
+
+    for ddf_name in short_seasons:
+        for season in short_seasons[ddf_name]:
+            dict_for_df = {
+                "ddf_name": ddf_name,
+                "season": season,
+                "even_odd_None": "None",
+            }
+            for key in "ugrizy":
+                dict_for_df[key] = 0
+
+            for seq in short_squences:
+                row = copy.copy(dict_for_df)
+                for key in seq:
+                    row[key] = seq[key]
+                dataframes.append(pd.DataFrame.from_dict(row, orient="index").T)
 
     for ddf_name in shallow_seasons:
         for season in shallow_seasons[ddf_name]:
