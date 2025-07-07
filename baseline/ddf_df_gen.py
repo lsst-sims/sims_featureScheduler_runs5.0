@@ -1,4 +1,5 @@
 __all__ = ("generate_ddf_df",)
+
 import pandas as pd
 import copy
 
@@ -10,14 +11,14 @@ def generate_ddf_df():
         {
             "u": 3,
             "season_length": 225,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 75,
         },
         {
             "y": 2,
             "season_length": 225,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 75,
         },
@@ -45,14 +46,14 @@ def generate_ddf_df():
         {
             "u": 8,
             "season_length": 225,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 75,
         },
         {
             "y": 20,
             "season_length": 225,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 75,
         },
@@ -80,7 +81,7 @@ def generate_ddf_df():
             "i": 55,
             "z": 52,
             "season_length": 180,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 110,
         },
@@ -90,14 +91,14 @@ def generate_ddf_df():
         {
             "u": 30,
             "season_length": 225,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 75,
         },
         {
             "y": 40,
             "season_length": 225,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 75,
         },
@@ -125,7 +126,7 @@ def generate_ddf_df():
             "i": 110,
             "z": 104,
             "season_length": 125,
-            "flush_length": 2.,
+            "flush_length": 2.0,
             "g_depth_limit": 23.5,
             "n_sequences": 75,
         },
@@ -151,8 +152,12 @@ def generate_ddf_df():
 
     for ddf_name in shallow_seasons:
         for season in shallow_seasons[ddf_name]:
-            dict_for_df = {"ddf_name": ddf_name, "season": season, "even_odd_None": "None"}
-            for key in 'ugrizy':
+            dict_for_df = {
+                "ddf_name": ddf_name,
+                "season": season,
+                "even_odd_None": "None",
+            }
+            for key in "ugrizy":
                 dict_for_df[key] = 0
 
             for seq in shallow_squences:
@@ -160,11 +165,15 @@ def generate_ddf_df():
                 for key in seq:
                     row[key] = seq[key]
                 dataframes.append(pd.DataFrame.from_dict(row, orient="index").T)
-    
+
     for ddf_name in deep_seasons:
         for season in deep_seasons[ddf_name]:
-            dict_for_df = {"ddf_name": ddf_name, "season": season, "even_odd_None": "None"}
-            for key in 'ugrizy':
+            dict_for_df = {
+                "ddf_name": ddf_name,
+                "season": season,
+                "even_odd_None": "None",
+            }
+            for key in "ugrizy":
                 dict_for_df[key] = 0
             if ddf_name == "EDFS_a":
                 for seq in euclid_deep_seq:

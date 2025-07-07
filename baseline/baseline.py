@@ -49,8 +49,8 @@ from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD, _hpid2_ra_dec
 from ddf_presched import generate_ddf_scheduled_obs
 from ddf_df_gen import generate_ddf_df
 
-STANDARD_EXP_TIME = 30.
-STANDARD_EXP_TIME_u = 38.
+STANDARD_EXP_TIME = 30.0
+STANDARD_EXP_TIME_u = 38.0
 
 # So things don't fail on hyak
 iers.conf.auto_download = False
@@ -59,8 +59,7 @@ iers.conf.auto_max_age = None
 
 
 def example_scheduler(**kwargs):
-    """Renamed
-    """
+    """Renamed"""
     return generate_baseline_coresched(**kwargs)
 
 
@@ -607,7 +606,7 @@ def gen_long_gaps_survey(
             [bf.AvoidDirectWind(nside=nside)],
             nside=nside,
             ignore_obs=["blob", "DDF", "twi", "pair"],
-            detailers=[detailers.LabelRegionsAndDDFs()]
+            detailers=[detailers.LabelRegionsAndDDFs()],
         )
         surveys.append(
             LongGapSurvey(blob[0], scripted, gap_range=gap_range, avoid_zenith=True)
@@ -1250,8 +1249,14 @@ def ddf_surveys(
     detailers=None,
     euclid_detailers=None,
     nside=None,
-    expt={"u": STANDARD_EXP_TIME_u, "g": STANDARD_EXP_TIME, "r": STANDARD_EXP_TIME, "i": STANDARD_EXP_TIME,
-          "z": STANDARD_EXP_TIME, "y": STANDARD_EXP_TIME},
+    expt={
+        "u": STANDARD_EXP_TIME_u,
+        "g": STANDARD_EXP_TIME,
+        "r": STANDARD_EXP_TIME,
+        "i": STANDARD_EXP_TIME,
+        "z": STANDARD_EXP_TIME,
+        "y": STANDARD_EXP_TIME,
+    },
     nsnaps={"u": 1, "g": 1, "r": 1, "i": 1, "z": 1, "y": 1},
 ):
     """Generate surveys for DDF observations
@@ -1273,9 +1278,7 @@ def ddf_surveys(
 
     ddf_dataframe = generate_ddf_df()
 
-    obs_array = generate_ddf_scheduled_obs(
-        ddf_dataframe, expt=expt, nsnaps=nsnaps
-    )
+    obs_array = generate_ddf_scheduled_obs(ddf_dataframe, expt=expt, nsnaps=nsnaps)
 
     survey1 = ScriptedSurvey(
         [bf.AvoidDirectWind(nside=nside)], nside=nside, detailers=detailers
@@ -1689,7 +1692,9 @@ def gen_scheduler(args):
         per_night=per_night, max_dither=max_dither
     )
 
-    dither_detailer = detailers.SplitDetailer(dither_detailer, detailers.EuclidDitherDetailer())
+    dither_detailer = detailers.SplitDetailer(
+        dither_detailer, detailers.EuclidDitherDetailer()
+    )
 
     details = [
         detailers.CameraRotDetailer(
@@ -1700,7 +1705,7 @@ def gen_scheduler(args):
         detailers.BandSortDetailer(),
         detailers.LabelRegionsAndDDFs(),
     ]
-    
+
     ddfs = ddf_surveys(
         detailers=details,
         nside=nside,

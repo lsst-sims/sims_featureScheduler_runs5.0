@@ -530,7 +530,7 @@ def generate_ddf_scheduled_obs(
         warnings.warn("Pre-computed DDF properties don't match requested survey times")
 
     in_range = np.where((ddf_grid["mjd"] >= mjd_start) & (ddf_grid["mjd"] <= mjd_max))
-    ddf_grid = ddf_grid[in_range]    
+    ddf_grid = ddf_grid[in_range]
 
     # can loop over each row to generate the observations that
     # row calls for
@@ -589,7 +589,7 @@ def generate_ddf_scheduled_obs(
                 g_depth_limit=row["g_depth_limit"],
                 offseason_length=offseason_length,
                 # XXX--magic number should move to config file
-                low_season_frac=80./200.,
+                low_season_frac=80.0 / 200.0,
                 low_season_rate=1.0,
                 mjd_start=mjd_start,
                 season_seq=n_sequences,
