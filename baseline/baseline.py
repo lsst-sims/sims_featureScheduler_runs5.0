@@ -13,7 +13,6 @@ __all__ = (
 )
 
 import argparse
-import copy
 import os
 import subprocess
 import sys
@@ -57,49 +56,6 @@ STANDARD_EXP_TIME_u = 38.
 iers.conf.auto_download = False
 # XXX--note this line probably shouldn't be in production
 iers.conf.auto_max_age = None
-
-
-class BandSortDetailer(detailers.BaseDetailer):
-    """Sort an array of observations by band
-    to minimize filter changes. Useful for
-    ScriptedSurveys like DDFs.
-    """
-
-    def __init__(self, desired_band_order="ugrizy", loaded_first=True, **kwargs):
-        self.desired_band_order = desired_band_order
-        self.loaded_first = loaded_first
-
-    def __call__(self, observation_array, conditions):
-
-        order_to_set = copy.copy(self.desired_band_order)
-        if self.loaded_first:
-            order_to_set = order_to_set.replace(conditions.current_band, "")
-            order_to_set = conditions.current_band + order_to_set
-        indicies = []
-        for bandname in order_to_set:
-            indicies.append(np.where(observation_array["band"] == bandname)[0])
-
-        indices = np.concatenate(indicies)
-
-        return observation_array[indices]
-
-
-class SplitDither(detailers.BaseDetailer):
-    """use different detailers depending on something. Mainly for
-    catching EDFS observations and doing a different dither
-    """
-    def __init__(self, det1, det2, split_str="EDFS"):
-        self.det1 = det1
-        self.det2 = det2
-        self.split_str = split_str
-
-    def __call__(self, observation_array, conditions):
-        string_in = [self.split_str in note for note in observation_array["scheduler_note"]]
-        string_out = np.logical_not(string_in)
-        
-        observation_array[string_out] = self.det1(observation_array[string_out], conditions)
-        observation_array[string_in] = self.det2(observation_array[string_in], conditions)
-        return observation_array
 
 
 def example_scheduler(**kwargs):
@@ -490,6 +446,7 @@ def blob_for_long(
         detailer_list.append(
             detailers.BandNexp(bandname="u", nexp=1, exptime=u_exptime)
         )
+        detailer_list.append(detailers.LabelRegionsAndDDFs())
 
         # List to hold tuples of (basis_function_object, weight)
         bfs = []
@@ -650,6 +607,7 @@ def gen_long_gaps_survey(
             [bf.AvoidDirectWind(nside=nside)],
             nside=nside,
             ignore_obs=["blob", "DDF", "twi", "pair"],
+            detailers=[detailers.LabelRegionsAndDDFs()]
         )
         surveys.append(
             LongGapSurvey(blob[0], scripted, gap_range=gap_range, avoid_zenith=True)
@@ -742,6 +700,7 @@ def gen_greedy_surveys(
             min_rot=np.min(camera_rot_limits), max_rot=np.max(camera_rot_limits)
         )
     ]
+    detailer_list.append(detailers.LabelRegionsAndDDFs())
 
     for bandname in bands:
         bfs = []
@@ -935,6 +894,7 @@ def generate_blobs(
         )
         detailer_list.append(detailers.CloseAltDetailer())
         detailer_list.append(detailers.FlushForSchedDetailer())
+        detailer_list.append(detailers.LabelRegionsAndDDFs())
         # List to hold tuples of (basis_function_object, weight)
         bfs = []
 
@@ -1185,6 +1145,7 @@ def generate_twi_blobs(
         )
         detailer_list.append(detailers.CloseAltDetailer())
         detailer_list.append(detailers.FlushForSchedDetailer())
+        detailer_list.append(detailers.LabelRegionsAndDDFs())
         # List to hold tuples of (basis_function_object, weight)
         bfs = []
 
@@ -1289,7 +1250,8 @@ def ddf_surveys(
     detailers=None,
     euclid_detailers=None,
     nside=None,
-    expt={"u": STANDARD_EXP_TIME_u, "g": STANDARD_EXP_TIME, "r": STANDARD_EXP_TIME, "i": STANDARD_EXP_TIME, "z": STANDARD_EXP_TIME, "y": STANDARD_EXP_TIME},
+    expt={"u": STANDARD_EXP_TIME_u, "g": STANDARD_EXP_TIME, "r": STANDARD_EXP_TIME, "i": STANDARD_EXP_TIME,
+          "z": STANDARD_EXP_TIME, "y": STANDARD_EXP_TIME},
     nsnaps={"u": 1, "g": 1, "r": 1, "i": 1, "z": 1, "y": 1},
 ):
     """Generate surveys for DDF observations
@@ -1459,6 +1421,7 @@ def generate_twilight_near_sun(
             )
         )
         detailer_list.append(detailers.RandomBandDetailer(bands=bands))
+        detailer_list.append(detailers.LabelRegionsAndDDFs())
         bfs = []
 
         bfs.append(
@@ -1726,7 +1689,7 @@ def gen_scheduler(args):
         per_night=per_night, max_dither=max_dither
     )
 
-    dither_detailer = SplitDither(dither_detailer, detailers.EuclidDitherDetailer())
+    dither_detailer = detailers.SplitDetailer(dither_detailer, detailers.EuclidDitherDetailer())
 
     details = [
         detailers.CameraRotDetailer(
@@ -1734,7 +1697,8 @@ def gen_scheduler(args):
         ),
         dither_detailer,
         u_detailer,
-        BandSortDetailer(),
+        detailers.BandSortDetailer(),
+        detailers.LabelRegionsAndDDFs(),
     ]
     
     ddfs = ddf_surveys(
@@ -1784,6 +1748,7 @@ def gen_scheduler(args):
                 min_rot=np.min(camera_rot_limits), max_rot=np.max(camera_rot_limits)
             )
         )
+        detailer_list.append(detailers.LabelRegionsAndDDFs())
         # Let's make a footprint to follow up ToO events
         too_footprint = footprints_hp["r"] * 0 + np.nan
         too_footprint[np.where(footprints_hp["r"] > 0)[0]] = 1.0
