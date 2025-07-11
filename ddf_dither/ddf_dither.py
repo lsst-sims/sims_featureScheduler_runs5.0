@@ -1809,7 +1809,7 @@ def sched_argparser():
     parser.add_argument(
         "--nexp", type=int, default=1, help="Number of exposures per visit"
     )
-    parser.add_argument("--max_dither", default=0.2, help="Max dither for DDFs")
+    parser.add_argument("--max_dither", type=float, default=0.2, help="Max dither for DDFs")
     parser.add_argument("--dbroot", type=str, help="Database root")
     parser.add_argument(
         "--setup_only",
