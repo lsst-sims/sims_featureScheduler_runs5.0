@@ -25,7 +25,7 @@ source ~/anaconda3/etc/profile.d/conda.sh
 conda activate rubin12
 export OPENBLAS_NUM_THREADS=1
 
-car ccr2.sh | parallel -j 2
+cat ccr2.sh | parallel -j 2
 
 
 # rm maf.sh
