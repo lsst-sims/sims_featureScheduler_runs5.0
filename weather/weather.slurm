@@ -25,7 +25,7 @@ source ~/anaconda3/etc/profile.d/conda.sh
 conda activate rubin12
 export OPENBLAS_NUM_THREADS=1
 
-cat weather.sj | parallel -j 16
+cat weather.sh | parallel -j 16
 
 
 # rm maf.sh
