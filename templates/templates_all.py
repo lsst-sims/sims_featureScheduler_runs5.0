@@ -26,7 +26,7 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.utils import iers
 from rubin_scheduler.scheduler import sim_runner
-from rubin_scheduler.scheduler.model_observatory import ModelObservatory
+from rubin_scheduler.scheduler.model_observatory import ModelObservatory, tma_movement
 from rubin_scheduler.scheduler.schedulers import CoreScheduler, SimpleBandSched
 from rubin_scheduler.scheduler.surveys import (
     BlobSurvey,
@@ -1690,11 +1690,19 @@ def run_sched(
     event_table=None,
     sim_to_o=None,
     snapshot_dir=None,
+    readtime=3.07,
+    band_changetime=140.,
+    tma_performance=40
 ):
     """Run survey"""
     n_visit_limit = None
     fs = SimpleBandSched(illum_limit=illum_limit)
     observatory = ModelObservatory(nside=nside, mjd_start=mjd_start, sim_to_o=sim_to_o)
+
+    tma_kwargs = tma_movement(percent=tma_performance)
+    observatory.setup_telescope(**tma_kwargs)
+    observatory.setup_camera(band_changetime=band_changetime, readtime=readtime)
+    
     observatory, scheduler, observations = sim_runner(
         observatory,
         scheduler,
