@@ -12,7 +12,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=20g
 #
-#SBATCH --time=1-14:10:00
+#SBATCH --time=2-14:10:00
 #SBATCH --chdir=/sdf/data/rubin/shared/fbs_sims/sims_featureScheduler_runs5.0/weather
 #SBATCH --mail-user=yoachim@uw.edu
 #
