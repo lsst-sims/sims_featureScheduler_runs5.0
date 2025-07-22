@@ -7,5 +7,5 @@ Changes from 4.3:
 * 1 snap visits rather than 2
 * Major DDF refactor to deep and shallow seaons on all fields
 * Dropping rotSkyPos_desired and having model observatory deal with rotSkyPos values that are invalid
-* 
+* Turning TMA performance down to 40% (from previous default of 70%)
 
