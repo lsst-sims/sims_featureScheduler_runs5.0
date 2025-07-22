@@ -1,0 +1,8 @@
+#!/bin/bash
+
+## copy just 10 year databases. exclude everything, then include all directories and all 10 year db files
+
+rsync -avzv --progress --include="*/" --include="*10yrs.db" --include "summary*.h5" --exclude="*" * /sdf/group/rubin/web_data/sim-data/sims_featureScheduler_runs5.0/
+
+# Easy command to remove empty dirs on slac:
+# find . -type d -empty -delete
