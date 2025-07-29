@@ -78,7 +78,7 @@ def generate_ddf_df():
         },
     ]
 
-    deep_squences = [
+    deep_sequences = [
         {
             "u": 8,
             "season_length": 225,
@@ -198,7 +198,7 @@ def generate_ddf_df():
             dict_for_df = {
                 "ddf_name": ddf_name,
                 "season": season,
-                "even_odd_None": "None",
+                "even_odd": "None",
             }
             for key in "ugrizy":
                 dict_for_df[key] = 0
@@ -214,7 +214,7 @@ def generate_ddf_df():
             dict_for_df = {
                 "ddf_name": ddf_name,
                 "season": season,
-                "even_odd_None": "None",
+                "even_odd": "None",
             }
             for key in "ugrizy":
                 dict_for_df[key] = 0
@@ -230,7 +230,7 @@ def generate_ddf_df():
             dict_for_df = {
                 "ddf_name": ddf_name,
                 "season": season,
-                "even_odd_None": "None",
+                "even_odd": "None",
             }
             for key in "ugrizy":
                 dict_for_df[key] = 0
@@ -240,11 +240,12 @@ def generate_ddf_df():
                     for key in seq:
                         row[key] = seq[key]
             else:
-                for seq in deep_squences:
+                for seq in deep_sequences:
                     row = copy.copy(dict_for_df)
                     for key in seq:
                         row[key] = seq[key]
-            dataframes.append(pd.DataFrame.from_dict(row, orient="index").T)
+            
+                    dataframes.append(pd.DataFrame.from_dict(row, orient="index").T)
 
     result = pd.concat(dataframes)
 

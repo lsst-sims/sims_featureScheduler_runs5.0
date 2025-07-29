@@ -247,7 +247,7 @@ def generate_ddf_df():
                     row = copy.copy(dict_for_df)
                     for key in seq:
                         row[key] = seq[key]
-            dataframes.append(pd.DataFrame.from_dict(row, orient="index").T)
+                    dataframes.append(pd.DataFrame.from_dict(row, orient="index").T)
 
     result = pd.concat(dataframes)
 

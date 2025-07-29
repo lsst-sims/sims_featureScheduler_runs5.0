@@ -560,9 +560,9 @@ def generate_ddf_scheduled_obs(
             ]
 
         mask_even_odd = None
-        if row["even_odd_None"].strip() == "even":
+        if row["even_odd"].strip() == "even":
             mask_even_odd = True
-        elif row["even_odd_None"].strip() == "odd":
+        elif row["even_odd"].strip() == "odd":
             mask_even_odd = False
 
         moon_illum_gt = None
@@ -573,10 +573,10 @@ def generate_ddf_scheduled_obs(
             moon_illum_gt = illum_limit
 
         # Only doing early and late season observations
-        if "early" in row["even_odd_None"].strip():
-            if "p_0" in row["even_odd_None"].strip():
+        if "early" in row["even_odd"].strip():
+            if "p_0" in row["even_odd"].strip():
                 mask_even_odd = True
-            elif "p_2" in row["even_odd_None"].strip():
+            elif "p_2" in row["even_odd"].strip():
                 mask_even_odd = False
             mjds = optimize_ddf_times(
                 ddf_name,
