@@ -12,7 +12,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=25g
 #
-#SBATCH --time=2-14:10:00
+#SBATCH --time=3-14:10:00
 #SBATCH --chdir=/sdf/data/rubin/shared/fbs_sims/sims_featureScheduler_runs5.0/maf
 #SBATCH --mail-user=yoachim@uw.edu
 #
@@ -29,10 +29,10 @@ export OPENBLAS_NUM_THREADS=1
 
 rm maf.sh
 
-# ls *10yrs.db | xargs -I'{}' echo "scimaf_dir --db '{}'" > maf.sh
-# ls *10yrs.db | xargs -I'{}' echo "glance_dir --db '{}'" >> maf.sh
-# ls *10yrs.db | xargs -I'{}' echo "ddf_dir --db '{}'" >> maf.sh
-# ls *10yrs.db | xargs -I'{}' echo "metadata_dir --db '{}'" >> maf.sh
+ls *10yrs.db | xargs -I'{}' echo "scimaf_dir --db '{}'" > maf.sh
+ls *10yrs.db | xargs -I'{}' echo "glance_dir --db '{}'" >> maf.sh
+ls *10yrs.db | xargs -I'{}' echo "ddf_dir --db '{}'" >> maf.sh
+ls *10yrs.db | xargs -I'{}' echo "metadata_dir --db '{}'" >> maf.sh
 
 generate_ss
 cat ss_script.sh >> maf.sh
