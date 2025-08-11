@@ -9,3 +9,6 @@ Changes from 4.3:
 * Dropping rotSkyPos_desired and having model observatory deal with rotSkyPos values that are invalid
 * Turning TMA performance down to 40% (from previous default of 70%)
 
+for 5.0.1
+
+ * Added update_conditions, resulting in more ToO observations getting scheduled
