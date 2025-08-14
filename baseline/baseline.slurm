@@ -25,7 +25,7 @@ source ~/anaconda3/etc/profile.d/conda.sh
 conda activate rubin12
 export OPENBLAS_NUM_THREADS=1
 
-python baseline.py 
+#python baseline.py 
 
 
 rm maf.sh
