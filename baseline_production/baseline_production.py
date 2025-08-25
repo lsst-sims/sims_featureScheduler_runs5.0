@@ -10,6 +10,7 @@ __all__ = (
     "generate_twi_blobs",
     "generate_twilight_near_sun",
     "standard_bf",
+    "safety_masks",
 )
 
 import argparse
@@ -39,6 +40,7 @@ from rubin_scheduler.scheduler.surveys import (
 )
 from rubin_scheduler.scheduler.targetofo import gen_all_events
 from rubin_scheduler.scheduler.utils import (
+    Footprints,
     ConstantFootprint,
     CurrentAreaMap,
     make_rolling_footprints,
@@ -49,9 +51,13 @@ from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD, _hpid2_ra_dec
 from ddf_presched import generate_ddf_scheduled_obs
 from ddf_df_gen import generate_ddf_df
 
-STANDARD_EXP_TIME = 30.0
-STANDARD_EXP_TIME_u = 38.0
-
+# Set up values to use as kwarg defaults.
+NEXP = 1
+U_NEXP = 1
+EXPTIME = 30.0
+U_EXPTIME = 38.0
+CAMERA_ROT_LIMITS = (-80.0, 80.0)
+SCIENCE_PROGRAM = "BLOCK-365"
 # So things don't fail on hyak
 iers.conf.auto_download = False
 # XXX--note this line probably shouldn't be in production
@@ -96,26 +102,143 @@ def generate_baseline_coresched(
     return scheduler
 
 
+def safety_masks(
+    nside: int = DEFAULT_NSIDE,
+    moon_distance: float = 30,
+    wind_speed_maximum: float = 20.0,
+    min_alt: float = 20,
+    max_alt: float = 86.5,
+    min_az: float = 0,
+    max_az: float = 360,
+    shadow_minutes: float = 70,
+    min_az_sunrise: float = 120,
+    max_az_sunrise: float = 290,
+    time_to_sunrise: float = 3.0,
+) -> list[bf.BaseBasisFunction]:
+    """Basic safety mask basis functions.
+
+    Avoids the moon, bright planets, high wind, and
+    areas on the sky out of bounds, using
+    the MoonAvoidanceBasisFunction, PlanetMaskBasisFunction,
+    AvoidDirectWindBasisFunction, and the AltAzShadowMaskBasisFunction.
+    Adds the default AltAzShadowMaskTimeLimited basis function to avoid
+    pointing toward sunrise late in the night during commissioning.
+
+    Parameters
+    ----------
+    nside : `int` or None
+        The healpix nside to use.
+        Default of None uses rubin_scheduler.utils.get_default_nside.
+    moon_distance : `float`, optional
+        Moon avoidance distance, in degrees.
+    wind_speed_maximum : `float`, optional
+        Wind speed maximum to apply to the wind avoidance basis function,
+        in m/s.
+    min_alt : `float`, optional
+        Minimum altitude (in degrees) to observe.
+    max_alt : `float`, optional
+        Maximum altitude (in degrees) to observe.
+    min_az : `float`, optional
+        Minimum azimuth angle (in degrees) to observe.
+    max_az : `float`, optional
+        Maximum azimuth angle (in degrees) to observe.
+    shadow_minutes : `float`, optional
+        Avoid inaccessible alt/az regions, as well as parts of the sky
+        which will move into those regions within `shadow_minutes` (minutes).
+    min_az_sunrise : `float`, optional
+        Minimum azimuth angle (in degrees) to observe during time period
+        at the end of the night (during time_to_sunrise).
+    max_az_sunrise: `float`, optional
+        Maximum azimuth angle (in degrees) to observe during the time period
+        at the end of the night (during time_to_sunrise).
+    time_to_sunrise : `float`, optional
+        Hours before daybreak (sun @ alt=0) to start the azimuth avoidance
+        mask.
+
+    Returns
+    -------
+    mask_basis_functions : `list` [`BaseBasisFunction`]
+        Mask basis functions should always be used with a weight of 0.
+        The masked (np.nan or -np.inf) regions will remain masked,
+        but the basis function values won't influence the reward.
+    """
+    mask_bfs = []
+    # Avoid the moon - too close to the moon will trip the REBs
+    mask_bfs.append(
+        bf.MoonAvoidanceBasisFunction(nside=nside, moon_distance=moon_distance)
+    )
+    # Avoid bright planets
+    mask_bfs.append(bf.PlanetMaskBasisFunction(nside=nside))
+    # Avoid the wind
+    mask_bfs.append(
+        bf.AvoidDirectWind(nside=nside, wind_speed_maximum=wind_speed_maximum)
+    )
+    # Avoid the alt/az limits - this will pick up limits from the
+    # yaml file configurations for the summit as well
+    mask_bfs.append(
+        bf.AltAzShadowMaskBasisFunction(
+            nside=nside,
+            min_alt=min_alt,
+            max_alt=max_alt,
+            min_az=min_az,
+            max_az=max_az,
+            shadow_minutes=shadow_minutes,
+        )
+    )
+    # Only look toward the southeast in the morning,
+    # permitting emergency dome closure
+    mask_bfs.append(
+        bf.AltAzShadowTimeLimitedBasisFunction(
+            nside=nside,
+            min_alt=min_alt,
+            max_alt=max_alt,
+            min_az=min_az_sunrise,
+            max_az=max_az_sunrise,
+            shadow_minutes=shadow_minutes,
+            # Time until/after sun_keys in hours
+            time_to_sun=time_to_sunrise + shadow_minutes / 60.0,
+            # 'sunrise' is 0 degree sunrise
+            sun_keys=["sunrise"],
+        )
+    )
+    # We should move this into the basis function itself.
+    if shadow_minutes > 40:
+        mask_bfs.append(
+            bf.AltAzShadowTimeLimitedBasisFunction(
+                nside=nside,
+                min_alt=min_alt,
+                max_alt=max_alt,
+                min_az=min_az_sunrise,
+                max_az=max_az_sunrise,
+                shadow_minutes=shadow_minutes / 2.0,
+                # Time until/after sun_keys in hours
+                time_to_sun=time_to_sunrise + shadow_minutes / 60.0,
+                # 'sunrise' is 0 degree sunrise
+                sun_keys=["sunrise"],
+            )
+        )
+    return mask_bfs
+
+
 def standard_bf(
-    nside,
-    bandname="g",
-    bandname2="i",
-    m5_weight=6.0,
-    footprint_weight=1.5,
-    slewtime_weight=3.0,
-    stayband_weight=3.0,
-    template_weight=12.0,
-    u_template_weight=50.0,
-    g_template_weight=50.0,
-    footprints=None,
-    n_obs_template=None,
-    season=365.25,
-    season_start_hour=-4.0,
-    season_end_hour=2.0,
-    moon_distance=30.0,
-    strict=True,
-    wind_speed_maximum=20.0,
-):
+    nside: int = DEFAULT_NSIDE,
+    bandname: str = "g",
+    bandname2: str = "i",
+    m5_weight: float = 6.0,
+    footprint_weight: float = 1.5,
+    slewtime_weight: float = 3.0,
+    stayband_weight: float = 3.0,
+    template_weight: float = 12.0,
+    u_template_weight: float = 50.0,
+    g_template_weight: float = 50.0,
+    footprints: Footprints | None = None,
+    fiducial_fwhm: float = 1.3,
+    n_obs_template: dict | None = None,
+    season: float = 365.25,
+    season_start_hour: float = -4.0,
+    season_end_hour: float = 2.0,
+    strict: bool = True,
+) -> list[tuple[bf.BaseBasisFunction, float]]:
     """Generate the standard basis functions that are shared by blob surveys
 
     Parameters
@@ -295,55 +418,45 @@ def standard_bf(
                 )
             )
 
-    # The shared masks
-    bfs.append(
-        (
-            bf.MoonAvoidanceBasisFunction(nside=nside, moon_distance=moon_distance),
-            0.0,
-        )
-    )
-    bfs.append(
-        (bf.AvoidDirectWind(nside=nside, wind_speed_maximum=wind_speed_maximum), 0)
-    )
     bandnames = [fn for fn in [bandname, bandname2] if fn is not None]
     bfs.append((bf.BandLoadedBasisFunction(bandnames=bandnames), 0))
-    bfs.append((bf.PlanetMaskBasisFunction(nside=nside), 0.0))
 
     return bfs
 
 
 def blob_for_long(
-    nside,
-    nexp=1,
-    exptime=STANDARD_EXP_TIME,
-    band1s=["g"],
-    band2s=["i"],
-    pair_time=33.0,
-    camera_rot_limits=[-80.0, 80.0],
-    n_obs_template=None,
-    season=365.25,
-    season_start_hour=-4.0,
-    season_end_hour=2.0,
-    shadow_minutes=60.0,
-    max_alt=76.0,
-    moon_distance=30.0,
-    ignore_obs=["DD", "twilight_near_sun"],
-    m5_weight=6.0,
-    footprint_weight=1.5,
-    slewtime_weight=3.0,
-    stayband_weight=3.0,
-    template_weight=12.0,
-    u_template_weight=50.0,
-    g_template_weight=50.0,
-    footprints=None,
-    u_nexp1=True,
-    night_pattern=[True, True],
-    time_after_twi=30.0,
-    HA_min=12,
-    HA_max=24 - 3.5,
-    blob_names=[],
-    u_exptime=38.0,
-    scheduled_respect=30.0,
+    footprints: Footprints,
+    nside: int = DEFAULT_NSIDE,
+    band1s: list[str] = ["g"],
+    band2s: list[str] = ["i"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "templates"],
+    camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
+    exptime: float = EXPTIME,
+    nexp: int = NEXP,
+    u_exptime: float = U_EXPTIME,
+    u_nexp: int = U_NEXP,
+    n_obs_template: dict = None,
+    pair_time: float = 33.0,
+    season: float = 365.25,
+    season_start_hour: float = -4.0,
+    season_end_hour: float = 2.0,
+    HA_min: float = 12,
+    HA_max: float = 24 - 3.5,
+    max_alt: float = 76.0,
+    m5_weight: float = 6.0,
+    footprint_weight: float = 1.5,
+    slewtime_weight: float = 3.0,
+    stayband_weight: float = 3.0,
+    template_weight: float = 12.0,
+    u_template_weight: float = 50.0,
+    g_template_weight: float = 50.0,
+    night_pattern: list[bool] = [True, True],
+    time_after_twi: float = 30.0,
+    blob_names: list[str] = [],
+    scheduled_respect: float = 30.0,
+    science_program: str = SCIENCE_PROGRAM,
+    observation_reason: str | None = None,
+    blob_survey_params: dict | None = None,
 ):
     """
     Generate surveys that take observations in blobs.
@@ -417,17 +530,18 @@ def blob_for_long(
         Default True.
     """
 
-    BlobSurvey_params = {
-        "slew_approx": 7.5,
-        "band_change_approx": 140.0,
-        "read_approx": 2.0,
-        "flush_time": 30.0,
-        "smoothing_kernel": None,
-        "nside": nside,
-        "seed": 42,
-        "dither": "night",
-        "twilight_scale": True,
-    }
+    if blob_survey_params is None:
+        blob_survey_params = {
+            "slew_approx": 7.5,
+            "band_change_approx": 140.0,
+            "read_approx": 2.4,
+            "flush_time": 30.0,
+            "smoothing_kernel": None,
+            "nside": nside,
+            "seed": 42,
+            "dither": "night",
+            "twilight_scale": True,
+        }
 
     surveys = []
     if n_obs_template is None:
@@ -443,7 +557,7 @@ def blob_for_long(
         )
         detailer_list.append(detailers.CloseAltDetailer())
         detailer_list.append(
-            detailers.BandNexp(bandname="u", nexp=1, exptime=u_exptime)
+            detailers.BandNexp(bandname="u", nexp=u_nexp, exptime=u_exptime)
         )
         detailer_list.append(detailers.LabelRegionsAndDDFs())
 
@@ -474,6 +588,8 @@ def blob_for_long(
         bfs.append((bf.TimeToScheduledBasisFunction(time_needed=scheduled_respect), 0))
 
         # Masks, give these 0 weight
+        # XXX--some magic numbers here
+        shadow_minutes = pair_time * 2 + 5
         bfs.append(
             (
                 bf.AltAzShadowMaskBasisFunction(
@@ -497,6 +613,11 @@ def blob_for_long(
         # only execute one blob per night
         bfs.append((bf.OnceInNightBasisFunction(notes=blob_names), 0))
 
+        # Add safety masks
+        masks = safety_masks(nside=nside, shadow_minutes=shadow_minutes)
+        for m in masks:
+            bfs.append((m, 0))
+
         # unpack the basis functions and weights
         weights = [val[1] for val in bfs]
         basis_functions = [val[0] for val in bfs]
@@ -507,8 +628,9 @@ def blob_for_long(
         if bandname2 is not None:
             detailer_list.append(detailers.TakeAsPairsDetailer(bandname=bandname2))
 
-        if u_nexp1:
-            detailer_list.append(detailers.BandNexp(bandname="u", nexp=1))
+        if observation_reason is None:
+            observation_reason = f"triplet_pairs_{bandname}{bandname2}_{pair_time :.1f}"
+        
         surveys.append(
             BlobSurvey(
                 basis_functions,
@@ -521,7 +643,9 @@ def blob_for_long(
                 ignore_obs=ignore_obs,
                 nexp=nexp,
                 detailers=detailer_list,
-                **BlobSurvey_params,
+                science_program=science_program,
+                observation_reason=observation_reason,
+                **blob_survey_params,
             )
         )
 
@@ -529,18 +653,24 @@ def blob_for_long(
 
 
 def gen_long_gaps_survey(
-    footprints,
-    nside=DEFAULT_NSIDE,
-    night_pattern=[True, True],
-    gap_range=[2, 7],
-    HA_min=12,
-    HA_max=24 - 3.5,
-    time_after_twi=120,
-    u_template_weight=50.0,
-    g_template_weight=50.0,
-    u_exptime=38.0,
-    nexp=1,
-):
+    footprints: Footprints,
+    nside: int = DEFAULT_NSIDE,
+    camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
+    exptime: float = EXPTIME,
+    nexp: int = NEXP,
+    u_exptime: float = U_EXPTIME,
+    u_nexp: int = U_NEXP,
+    pair_time: float = 33.0,
+    night_pattern: list[bool] = [True, True],
+    gap_range: list[float] = [2, 7],
+    HA_min: float = 12,
+    HA_max: float = 24 - 3.5,
+    time_after_twi: float = 120,
+    u_template_weight: float = 50.0,
+    g_template_weight: float = 50.0,
+    science_program: str = SCIENCE_PROGRAM,
+    blob_survey_params: dict | None = None,
+) -> list[LongGapSurvey]:
     """
     Paramterers
     -----------
@@ -589,6 +719,12 @@ def gen_long_gaps_survey(
     for bandname1, bandname2 in zip(f1, f2):
         blob = blob_for_long(
             footprints=footprints,
+            camera_rot_limits=camera_rot_limits,
+            exptime=exptime,
+            nexp=nexp,
+            u_exptime=u_exptime,
+            u_nexp=u_nexp,
+            pair_time=pair_time,
             nside=nside,
             band1s=[bandname1],
             band2s=[bandname2],
@@ -599,13 +735,14 @@ def gen_long_gaps_survey(
             u_template_weight=u_template_weight,
             g_template_weight=g_template_weight,
             blob_names=blob_names,
-            u_exptime=u_exptime,
-            nexp=nexp,
+            science_program=science_program,
+            blob_survey_params=blob_survey_params,
         )
         scripted = ScriptedSurvey(
-            [bf.AvoidDirectWind(nside=nside)],
+            safety_masks(nside, shadow_minutes=pair_time),
             nside=nside,
-            ignore_obs=["blob", "DDF", "twi", "pair"],
+            ignore_obs=["blob", "DDF", "twi", "pair", "templates"],
+            science_program=science_program,
             detailers=[detailers.LabelRegionsAndDDFs()],
         )
         surveys.append(
@@ -616,22 +753,24 @@ def gen_long_gaps_survey(
 
 
 def gen_greedy_surveys(
-    nside=DEFAULT_NSIDE,
-    nexp=1,
-    exptime=STANDARD_EXP_TIME,
-    bands=["r", "i", "z", "y"],
-    camera_rot_limits=[-80.0, 80.0],
-    shadow_minutes=0.0,
-    max_alt=76.0,
-    moon_distance=30.0,
-    ignore_obs=["DD", "twilight_near_sun"],
-    m5_weight=3.0,
-    footprint_weight=0.75,
-    slewtime_weight=3.0,
-    stayband_weight=100.0,
-    repeat_weight=-1.0,
-    footprints=None,
-):
+    nside: int = DEFAULT_NSIDE,
+    bands: list[str] = ["r", "i", "z", "y"],
+    ignore_obs: list[str] = ["DD", "twilight_near_sun, templates"],
+    camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
+    exptime: float = EXPTIME,
+    nexp: int = NEXP,
+    u_exptime: float = U_EXPTIME,
+    u_nexp: int = U_NEXP,
+    shadow_minutes: float = 15.0,
+    max_alt: float = 76.0,
+    m5_weight: float = 3.0,
+    footprint_weight: float = 0.75,
+    slewtime_weight: float = 3.0,
+    stayband_weight: float = 100.0,
+    repeat_weight: float = -1.0,
+    footprints: Footprints | None = None,
+    science_program=SCIENCE_PROGRAM,
+) -> list[GreedySurvey]:
     """
     Make a quick set of greedy surveys
 
@@ -690,7 +829,6 @@ def gen_greedy_surveys(
         "seed": 42,
         "camera": "LSST",
         "dither": "night",
-        "survey_name": "greedy",
     }
 
     surveys = []
@@ -721,6 +859,7 @@ def gen_greedy_surveys(
             )
         )
 
+        # XXX-magic numbers
         bfs.append(
             (
                 bf.VisitRepeatBasisFunction(
@@ -750,6 +889,9 @@ def gen_greedy_surveys(
                 ignore_obs=ignore_obs,
                 nexp=nexp,
                 detailers=detailer_list,
+                survey_name=f"greedy {bandname}",
+                science_program=science_program,
+                observation_reason=f"singles_{bandname}",
                 **greed_survey_params,
             )
         )
@@ -758,37 +900,37 @@ def gen_greedy_surveys(
 
 
 def generate_blobs(
-    nside,
-    nexp=1,
-    exptime=STANDARD_EXP_TIME,
-    band1s=["u", "u", "g", "r", "i", "z", "y"],
-    band2s=["g", "r", "r", "i", "z", "y", "y"],
-    pair_time=33.0,
-    camera_rot_limits=[-80.0, 80.0],
-    n_obs_template=None,
-    season=365.25,
-    season_start_hour=-4.0,
-    season_end_hour=2.0,
-    shadow_minutes=60.0,
-    max_alt=76.0,
-    moon_distance=30.0,
-    ignore_obs=["DD", "twilight_near_sun"],
-    m5_weight=6.0,
-    footprint_weight=1.5,
-    slewtime_weight=3.0,
-    stayband_weight=3.0,
-    template_weight=12.0,
-    u_template_weight=50.0,
-    g_template_weight=50.0,
-    footprints=None,
-    u_nexp1=True,
-    scheduled_respect=45.0,
-    good_seeing={"g": 3, "r": 3, "i": 3},
-    good_seeing_weight=3.0,
-    mjd_start=1,
-    repeat_weight=-20,
-    u_exptime=38.0,
-):
+    footprints: Footprints,
+    nside: int = DEFAULT_NSIDE,
+    band1s: list[str] = ["u", "u", "g", "r", "i", "z", "y"],
+    band2s: list[str] = ["g", "r", "r", "i", "z", "y", "y"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "templates"],
+    camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
+    exptime: float = EXPTIME,
+    nexp: int = NEXP,
+    u_exptime: float = U_EXPTIME,
+    u_nexp: int = U_NEXP,
+    n_obs_template: dict = None,
+    pair_time: float = 33.0,
+    season: float = 365.25,
+    season_start_hour: float = -4.0,
+    season_end_hour: float = 2.0,
+    max_alt: float = 76.0,
+    m5_weight: float = 6.0,
+    footprint_weight: float = 1.5,
+    slewtime_weight: float = 3.0,
+    stayband_weight: float = 3.0,
+    template_weight: float = 12.0,
+    u_template_weight: float = 50.0,
+    g_template_weight: float = 50.0,
+    repeat_weight: float = -20,
+    good_seeing: dict = {"g": 3, "r": 3, "i": 3},
+    good_seeing_weight: float = 3.0,
+    survey_start: float = SURVEY_START_MJD,
+    scheduled_respect: float = 45.0,
+    science_program: str = SCIENCE_PROGRAM,
+    blob_survey_params: dict | None = None,
+) -> list[BlobSurvey]:
     """
     Generate surveys that take observations in blobs.
 
@@ -866,17 +1008,18 @@ def generate_blobs(
         observation (minutes). Default 45.
     """
 
-    BlobSurvey_params = {
-        "slew_approx": 7.5,
-        "band_change_approx": 140.0,
-        "read_approx": 2.0,
-        "flush_time": 30.0,
-        "smoothing_kernel": None,
-        "nside": nside,
-        "seed": 42,
-        "dither": "night",
-        "twilight_scale": False,
-    }
+    if blob_survey_params is None:
+        blob_survey_params = {
+            "slew_approx": 7.5,
+            "band_change_approx": 140.0,
+            "read_approx": 2.4,
+            "flush_time": 30.0,
+            "smoothing_kernel": None,
+            "nside": nside,
+            "seed": 42,
+            "dither": "night",
+            "twilight_scale": True,
+        }
 
     if n_obs_template is None:
         n_obs_template = {"u": 3, "g": 3, "r": 3, "i": 3, "z": 3, "y": 3}
@@ -934,7 +1077,7 @@ def generate_blobs(
                         bf.NGoodSeeingBasisFunction(
                             bandname=bandname,
                             nside=nside,
-                            mjd_start=mjd_start,
+                            mjd_start=survey_start,
                             footprint=footprints.get_footprint(bandname),
                             n_obs_desired=good_seeing[bandname],
                         ),
@@ -947,7 +1090,7 @@ def generate_blobs(
                         bf.NGoodSeeingBasisFunction(
                             bandname=bandname2,
                             nside=nside,
-                            mjd_start=mjd_start,
+                            mjd_start=survey_start,
                             footprint=footprints.get_footprint(bandname2),
                             n_obs_desired=good_seeing[bandname2],
                         ),
@@ -961,7 +1104,7 @@ def generate_blobs(
                         bf.NGoodSeeingBasisFunction(
                             bandname=bandname,
                             nside=nside,
-                            mjd_start=mjd_start,
+                            mjd_start=survey_start,
                             footprint=footprints.get_footprint(bandname),
                             n_obs_desired=good_seeing[bandname],
                         ),
@@ -971,6 +1114,8 @@ def generate_blobs(
         # Make sure we respect scheduled observations
         bfs.append((bf.TimeToScheduledBasisFunction(time_needed=scheduled_respect), 0))
         # Masks, give these 0 weight
+        # XXX--more magic numbers
+        shadow_minutes = pair_time * 2 + 5
         bfs.append(
             (
                 bf.AltAzShadowMaskBasisFunction(
@@ -996,10 +1141,11 @@ def generate_blobs(
         if bandname2 is not None:
             detailer_list.append(detailers.TakeAsPairsDetailer(bandname=bandname2))
 
-        if u_nexp1:
-            detailer_list.append(
-                detailers.BandNexp(bandname="u", nexp=1, exptime=u_exptime)
-            )
+        observation_reason = f"pairs_{bandname}"
+        if bandname2 is not None:
+            observation_reason += f"{bandname2}"
+        observation_reason += f"_{pair_time :.1f}"
+
         surveys.append(
             BlobSurvey(
                 basis_functions,
@@ -1009,10 +1155,12 @@ def generate_blobs(
                 exptime=exptime,
                 ideal_pair_time=pair_time,
                 survey_name=survey_name,
+                science_program=science_program,
+                observation_reason=observation_reason,
                 ignore_obs=ignore_obs,
                 nexp=nexp,
                 detailers=detailer_list,
-                **BlobSurvey_params,
+                **blob_survey_params,
             )
         )
 
@@ -1020,114 +1168,112 @@ def generate_blobs(
 
 
 def generate_twi_blobs(
-    nside,
-    nexp=1,
-    exptime=STANDARD_EXP_TIME,
-    band1s=["r", "i", "z", "y"],
-    band2s=["i", "z", "y", "y"],
-    pair_time=15.0,
-    camera_rot_limits=[-80.0, 80.0],
-    n_obs_template=None,
-    season=365.25,
-    season_start_hour=-4.0,
-    season_end_hour=2.0,
-    shadow_minutes=60.0,
-    max_alt=76.0,
-    moon_distance=30.0,
-    ignore_obs=["DD", "twilight_near_sun"],
-    m5_weight=6.0,
-    footprint_weight=1.5,
-    slewtime_weight=3.0,
-    stayband_weight=3.0,
-    template_weight=12.0,
-    footprints=None,
-    repeat_night_weight=None,
-    wfd_footprint=None,
-    scheduled_respect=15.0,
-    repeat_weight=-1.0,
-    night_pattern=None,
-):
+    footprints: Footprints,
+    nside: int = DEFAULT_NSIDE,
+    band1s: list[str] = ["r", "i", "z", "y"],
+    band2s: list[str] = ["i", "z", "y", "y"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "templates"],
+    camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
+    exptime: float = EXPTIME,
+    nexp: int = NEXP,
+    n_obs_template: dict = None,
+    pair_time: float = 15.0,
+    season: float = 365.25,
+    season_start_hour: float = -4.0,
+    season_end_hour: float = 2.0,
+    max_alt: float = 76.0,
+    m5_weight: float = 6.0,
+    footprint_weight: float = 1.5,
+    slewtime_weight: float = 3.0,
+    stayband_weight: float = 3.0,
+    template_weight: float = 12.0,
+    repeat_weight: float = -1,
+    scheduled_respect: float = 15.0,
+    night_pattern: list[bool] | None = None,
+    science_program: str = SCIENCE_PROGRAM,
+    blob_survey_params: dict | None = None,
+) -> list[BlobSurvey]:
     """
-    Generate surveys that take observations in blobs.
+    Generate surveys that take observations in blobs, for twilight time.
+    Shorter blobs, different weights for the basis functions.
 
     Parameters
     ----------
+    footprints : `rubin_scheduler.scheduler.utils.Footprints`
+        The Footprints object for the Surveys.
     nside : `int`
-        The HEALpix nside to use
-    nexp : `int`
-        The number of exposures to use in a visit.
-    exptime : `float`
-        The exposure time to use per visit (seconds).
-        Default STANDARD_EXP_TIME
-    band1s : `list` of `str`
-        The bandnames for the first set.
-        Default ["r", "i", "z", "y"].
-    band2s : `list` of `str`
+        The HEALpix nside to use. Default to DEFAULT_NSIDE.
+    band1s : `list` [`str`]
+        The bandnames for the first band in a pair.
+    band2s : `list` [ `str` ]
         The band names for the second in the pair (None if unpaired).
-        Default ["i", "z", "y", "y"].
-    pair_time : `float`
-        The ideal time between pairs (minutes). Default 22.
-    camera_rot_limits : `list` of `float`
+    ignore_obs : `str` or `list` [ `str` ]
+        Ignore observations by surveys that include the given substring(s).
+    camera_rot_limits : `list` [ `float` ]
         The limits to impose when rotationally dithering the camera (degrees).
-        Default [-80., 80.].
+    exptime : `float`
+        Exposure time for visits.
+    nexp : `int`
+        Number of exposures per visit.
     n_obs_template : `dict`
         The number of observations to take every season in each band.
         If None, sets to 3 each. Default None.
-    season : `float`
-        The length of season (i.e., how long before templates expire) (days).
-        Default 365.25.
+    pair_time : `float`
+        The ideal time between pairs (minutes). Default 33.
+    season : float
+        The length of season (i.e., how long before templates expire) (days)
     season_start_hour : `float`
         Hour angle limits to use when gathering templates.
         Default -4 (hours)
-    sesason_end_hour : `float`
+    season_end_hour : `float`
        Hour angle limits to use when gathering templates.
        Default +2 (hours)
-    shadow_minutes : `float`
-        Used to mask regions around zenith (minutes).
-        Default 60.
     max_alt : `float`
-        The maximium altitude to use when masking zenith (degrees).
-        Default 76.
-    moon_distance : `float`
-        The mask radius to apply around the moon (degrees).
-        Default 30.
-    ignore_obs : `str` or `list` of `str`
-        Ignore observations by surveys that include the given substring(s).
-        Default ["DD", "twilight_near_sun"].
+        The maximum altitude to use for the Surveys.
+        Typically for BlobSurveys this is set lower than the max available,
+        to about 76 degrees, to avoid long dome slews near azimuth.
+        This is masked separately from the `safety_masks`.
     m5_weight : `float`
         The weight for the 5-sigma depth difference basis function.
-        Default 3 (unitless).
     footprint_weight : `float`
         The weight on the survey footprint basis function.
-        Default 0.3 (uniteless).
     slewtime_weight : `float`
         The weight on the slewtime basis function.
-        Default 3.0 (uniteless).
     stayband_weight : `float`
         The weight on basis function that tries to stay avoid band changes.
-        Default 3.0 (uniteless).
     template_weight : `float`
         The weight to place on getting image templates every season.
-        Default 12 (unitless).
-    u_template_weight : `float`
-        The weight to place on getting image templates in u-band. Since there
-        are so few u-visits, it can be helpful to turn this up a
-        little higher than the standard template_weight kwarg.
-        Default 24 (unitless).
+    repeat_weight : `float`
+        Weight that enhances (+ values) or decreases (- values) the likelihood
+        of revisiting the same pointing within a two-hour time gap.
+    scheduled_respect : `float`
+        Ensure that blobs don't start within this many minutes of scheduled
+        observations (from a ScriptedSurvey).
+    night_pattern : `list` [ `bool` ]
+        Which nights to let the survey execute (should be the opposite of
+        the pattern for the NEO twilight survey).
+        Default of [True, True] executes every night.
+    science_program : `str`
+        The science_program to use for visits from these surveys.
+    blob_survey_params : `dict` or None
+        A dictionary of additional kwargs to pass to the BlobSurvey.
+        In particular, the times for typical slews, readtime, etc. are
+        useful for setting the number of pointings to schedule within
+        pair_time.
     """
 
-    BlobSurvey_params = {
-        "slew_approx": 7.5,
-        "band_change_approx": 140.0,
-        "read_approx": 2.0,
-        "flush_time": 30.0,
-        "smoothing_kernel": None,
-        "nside": nside,
-        "seed": 42,
-        "dither": "night",
-        "twilight_scale": False,
-        "in_twilight": True,
-    }
+    if blob_survey_params is None:
+        blob_survey_params = {
+            "slew_approx": 7.5,
+            "band_change_approx": 140.0,
+            "read_approx": 2.4,
+            "flush_time": 30.0,
+            "smoothing_kernel": None,
+            "nside": nside,
+            "seed": 42,
+            "dither": "night",
+            "twilight_scale": True,
+        }
 
     surveys = []
 
@@ -1177,23 +1323,10 @@ def generate_twi_blobs(
             )
         )
 
-        if repeat_night_weight is not None:
-            bfs.append(
-                (
-                    bf.AvoidLongGapsBasisFunction(
-                        nside=nside,
-                        bandname=None,
-                        min_gap=0.0,
-                        max_gap=10.0 / 24.0,
-                        ha_limit=3.5,
-                        footprint=wfd_footprint,
-                    ),
-                    repeat_night_weight,
-                )
-            )
         # Make sure we respect scheduled observations
         bfs.append((bf.TimeToScheduledBasisFunction(time_needed=scheduled_respect), 0))
         # Masks, give these 0 weight
+        shadow_minutes = pair_time * 2 + 5
         bfs.append(
             (
                 bf.AltAzShadowMaskBasisFunction(
@@ -1217,6 +1350,11 @@ def generate_twi_blobs(
         # doing NEO hunts
         bfs.append((bf.NightModuloBasisFunction(pattern=night_pattern), 0))
 
+        # Add safety masks
+        masks = safety_masks(nside=nside, shadow_minutes=shadow_minutes)
+        for m in masks:
+            bfs.append((m, 0))
+
         # unpack the basis functions and weights
         weights = [val[1] for val in bfs]
         basis_functions = [val[0] for val in bfs]
@@ -1226,6 +1364,12 @@ def generate_twi_blobs(
             survey_name = "pair_%i, %s%s" % (pair_time, bandname, bandname2)
         if bandname2 is not None:
             detailer_list.append(detailers.TakeAsPairsDetailer(bandname=bandname2))
+
+        observation_reason = f"pairs_{bandname}"
+        if bandname2 is not None:
+            observation_reason += f"{bandname2}"
+        observation_reason += f"_{pair_time :.1f}"
+
         surveys.append(
             BlobSurvey(
                 basis_functions,
@@ -1235,10 +1379,12 @@ def generate_twi_blobs(
                 exptime=exptime,
                 ideal_pair_time=pair_time,
                 survey_name=survey_name,
+                science_program=science_program,
+                observation_reason=observation_reason,
                 ignore_obs=ignore_obs,
                 nexp=nexp,
                 detailers=detailer_list,
-                **BlobSurvey_params,
+                **blob_survey_params,
             )
         )
 
@@ -1246,42 +1392,65 @@ def generate_twi_blobs(
 
 
 def ddf_surveys(
-    detailers=None,
-    euclid_detailers=None,
-    nside=None,
-    expt={
-        "u": STANDARD_EXP_TIME_u,
-        "g": STANDARD_EXP_TIME,
-        "r": STANDARD_EXP_TIME,
-        "i": STANDARD_EXP_TIME,
-        "z": STANDARD_EXP_TIME,
-        "y": STANDARD_EXP_TIME,
-    },
-    nsnaps={"u": 1, "g": 1, "r": 1, "i": 1, "z": 1, "y": 1},
-):
-    """Generate surveys for DDF observations
+    detailer_list: list[detailers.BaseDetailer] | None = None,
+    nside: int = DEFAULT_NSIDE,
+    expt: dict | None = None,
+    nexp: dict | None = None,
+    survey_start: float = SURVEY_START_MJD,
+    survey_length: int = 10,
+    science_program: str = SCIENCE_PROGRAM,
+) -> list[ScriptedSurvey]:
+    """Generate surveys for DDF observations.
 
     Parameters
     ----------
-    detailers : `list` of `rubin_scheduler.scheduler.Detailer`
+    detailer_list : `list` [ `rubin_scheduler.scheduler.Detailer` ]
         Detailers for DDFs. Default None.
-    season_unobs_frac : `float`
-        Fraction of the season to not attempt DDF observations.
-        Default 0.2.
-    euclid_detailers : `list` of `rubin_scheduler.scheduler.Detailer`
-        Detailers to use for Euclid DDF observations.
-        Default None.
-    expt : `dict`
-        Exposure time for DDF visits. Keys of band name, values
-        of exposure time in seconds
+    nside : `int`
+        Nside for the survey. Used for mask basis functions.
+    expt : `dict`  { `str` : `float` } or None
+        Exposure time for DDF visits.
+        Default of None uses defaults of EXPTIME/U_EXPTIME.
+    nexp : `dict` { `str` : `int` } or None
+        Number of exposures per visit.
+        Default of None uses defaults of NEXP/U_NEXP.
+    survey_start : `float`
+        Start MJD of the survey. Used for prescheduling DDF visits.
+    survey_length : `float`
+        Length of the survey. Used for prescheduling DDF visits.
+    science_program : `str`
+        Name of the science program for the Survey.
     """
+
+    if expt is None:
+        expt = {
+            "u": U_EXPTIME,
+            "g": EXPTIME,
+            "r": EXPTIME,
+            "i": EXPTIME,
+            "z": EXPTIME,
+            "y": EXPTIME,
+        }
+    if nexp is None:
+        nexp = {"u": U_NEXP, "g": NEXP, "r": NEXP, "i": NEXP, "z": NEXP, "y": NEXP}
 
     ddf_dataframe = generate_ddf_df()
 
-    obs_array = generate_ddf_scheduled_obs(ddf_dataframe, expt=expt, nsnaps=nsnaps)
+    obs_array = generate_ddf_scheduled_obs(ddf_dataframe, expt=expt,
+        nsnaps=nexp,
+        mjd_start=survey_start,
+        survey_length=survey_length,
+        # XXX--magic number
+        sun_alt_max=-24,
+        science_program=science_program,
+    )
 
     survey1 = ScriptedSurvey(
-        [bf.AvoidDirectWind(nside=nside)], nside=nside, detailers=detailers
+                             # XXX--magic number
+        safety_masks(nside, shadow_minutes=30),
+        nside=nside,
+        detailers=detailer_list,
+        survey_name="deep drilling",
     )
     survey1.set_script(obs_array)
 
@@ -1324,13 +1493,13 @@ def ecliptic_target(nside=DEFAULT_NSIDE, dist_to_eclip=40.0, dec_max=30.0, mask=
 
 
 def generate_twilight_near_sun(
-    nside,
+    nside=DEFAULT_NSIDE,
     night_pattern=None,
     nexp=1,
     exptime=15,
     ideal_pair_time=5.0,
     max_airmass=2.0,
-    camera_rot_limits=[-80.0, 80.0],
+    camera_rot_limits=CAMERA_ROT_LIMITS,
     time_needed=10,
     footprint_mask=None,
     footprint_weight=0.1,
@@ -1600,7 +1769,6 @@ def gen_scheduler(args):
     survey_length = args.survey_length  # Days
     out_dir = args.out_dir
     verbose = args.verbose
-    nexp = args.nexp
     dbroot = args.dbroot
     nside = args.nside
     mjd_plus = args.mjd_plus
@@ -1612,7 +1780,6 @@ def gen_scheduler(args):
     # arguments.
     max_dither = 0.2  # Degrees. For DDFs
     illum_limit = 40.0  # Percent. Lunar illumination used for band loading
-    u_exptime = 38.0  # Seconds
     nslice = 2  # N slices for rolling
     rolling_scale = 0.9  # Strength of rolling
     rolling_uniform = True  # Should we use the uniform rolling flag
@@ -1625,6 +1792,7 @@ def gen_scheduler(args):
     ei_area_req = 0.0  # Sky area required before attempting inner solar system
     per_night = True  # Dither DDF per night
     camera_ddf_rot_limit = 75.0  # degrees
+    repeat_weight = 0  # Maybe set to -1? 
 
     # Be sure to also update and regenerate DDF grid save file
     # if changing mjd_start
@@ -1664,8 +1832,6 @@ def gen_scheduler(args):
     footprint_mask = footprints_hp["r"] * 0
     footprint_mask[np.where(footprints_hp["r"] > 0)] = 1
 
-    repeat_night_weight = None
-
     # Use the Almanac to find the position of the sun at the start of survey
     almanac = Almanac(mjd_start=mjd_start)
     sun_moon_info = almanac.get_sun_moon_positions(mjd_start)
@@ -1690,12 +1856,12 @@ def gen_scheduler(args):
         nside=nside,
         footprints=footprints,
         night_pattern=gaps_night_pattern,
-        u_exptime=u_exptime,
-        nexp=nexp,
+        u_exptime=U_EXPTIME,
+        nexp=NEXP,
     )
 
     # Set up the DDF surveys to dither
-    u_detailer = detailers.BandNexp(bandname="u", nexp=1, exptime=u_exptime)
+    u_detailer = detailers.BandNexp(bandname="u", nexp=U_NEXP, exptime=U_EXPTIME)
     dither_detailer = detailers.DitherDetailer(
         per_night=per_night, max_dither=max_dither
     )
@@ -1715,13 +1881,13 @@ def gen_scheduler(args):
     ]
 
     ddfs = ddf_surveys(
-        detailers=details,
+        detailer_list=details,
         nside=nside,
     )
 
-    greedy = gen_greedy_surveys(nside, nexp=nexp, footprints=footprints)
+    greedy = gen_greedy_surveys(nside, nexp=NEXP, footprints=footprints)
     neo = generate_twilight_near_sun(
-        nside,
+        nside=nside,
         night_pattern=ei_night_pattern,
         bands=ei_bands,
         n_repeat=ei_repeat,
@@ -1731,30 +1897,29 @@ def gen_scheduler(args):
         min_area=ei_area_req,
     )
     blobs = generate_blobs(
-        nside,
-        nexp=nexp,
+        nside=nside,
+        nexp=NEXP,
         footprints=footprints,
-        mjd_start=mjd_start,
-        u_exptime=u_exptime,
+        survey_start=mjd_start,
+        u_exptime=U_EXPTIME,
     )
     twi_blobs = generate_twi_blobs(
-        nside,
-        nexp=nexp,
+        nside=nside,
+        nexp=NEXP,
         footprints=footprints,
-        wfd_footprint=wfd_footprint,
-        repeat_night_weight=repeat_night_weight,
+        repeat_weight=repeat_weight,
         night_pattern=reverse_ei_night_pattern,
     )
 
     roman_surveys = [
-        gen_roman_on_season(nexp=nexp, exptime=STANDARD_EXP_TIME),
-        gen_roman_off_season(nexp=nexp, exptime=STANDARD_EXP_TIME),
+        gen_roman_on_season(nexp=NEXP, exptime=EXPTIME),
+        gen_roman_off_season(nexp=NEXP, exptime=EXPTIME),
     ]
 
     if too:
         too_scale = 1.0
         sim_ToOs, event_table = gen_all_events(scale=too_scale, nside=nside)
-        camera_rot_limits = [-80.0, 80.0]
+        camera_rot_limits = CAMERA_ROT_LIMITS
         detailer_list = []
         detailer_list.append(
             detailers.CameraRotDetailer(
@@ -1771,7 +1936,7 @@ def gen_scheduler(args):
             detailer_list=detailer_list,
             too_footprint=too_footprint,
             split_long=split_long,
-            n_snaps=nexp,
+            n_snaps=NEXP,
         )
         surveys = [toos, roman_surveys, ddfs, long_gaps, blobs, twi_blobs, neo, greedy]
 
@@ -1814,9 +1979,6 @@ def sched_argparser():
         "--survey_length", type=float, default=365.25 * 10, help="Survey length in days"
     )
     parser.add_argument("--out_dir", type=str, default="", help="Output directory")
-    parser.add_argument(
-        "--nexp", type=int, default=1, help="Number of exposures per visit"
-    )
     parser.add_argument("--dbroot", type=str, help="Database root")
     parser.add_argument(
         "--setup_only",
