@@ -20,6 +20,7 @@ import sys
 
 import healpy as hp
 import numpy as np
+import numpy.typing as npt
 import rubin_scheduler
 import rubin_scheduler.scheduler.basis_functions as bf
 import rubin_scheduler.scheduler.detailers as detailers
@@ -40,16 +41,17 @@ from rubin_scheduler.scheduler.surveys import (
 )
 from rubin_scheduler.scheduler.targetofo import gen_all_events
 from rubin_scheduler.scheduler.utils import (
-    Footprints,
     ConstantFootprint,
     CurrentAreaMap,
+    Footprints,
+    ObservationArray,
     make_rolling_footprints,
 )
 from rubin_scheduler.site_models import Almanac
 from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD, _hpid2_ra_dec
 
-from ddf_presched import generate_ddf_scheduled_obs
 from ddf_df_gen import generate_ddf_df
+from ddf_presched import generate_ddf_scheduled_obs
 
 # Set up values to use as kwarg defaults.
 NEXP = 1
@@ -64,7 +66,7 @@ iers.conf.auto_download = False
 iers.conf.auto_max_age = None
 
 
-def example_scheduler(**kwargs):
+def example_scheduler(**kwargs) -> CoreScheduler:
     """Renamed"""
     return generate_baseline_coresched(**kwargs)
 
@@ -114,6 +116,7 @@ def safety_masks(
     min_az_sunrise: float = 120,
     max_az_sunrise: float = 290,
     time_to_sunrise: float = 3.0,
+    apply_time_limited_shadow: bool = False,
 ) -> list[bf.BaseBasisFunction]:
     """Basic safety mask basis functions.
 
@@ -185,24 +188,12 @@ def safety_masks(
             shadow_minutes=shadow_minutes,
         )
     )
-    # Only look toward the southeast in the morning,
-    # permitting emergency dome closure
-    mask_bfs.append(
-        bf.AltAzShadowTimeLimitedBasisFunction(
-            nside=nside,
-            min_alt=min_alt,
-            max_alt=max_alt,
-            min_az=min_az_sunrise,
-            max_az=max_az_sunrise,
-            shadow_minutes=shadow_minutes,
-            # Time until/after sun_keys in hours
-            time_to_sun=time_to_sunrise + shadow_minutes / 60.0,
-            # 'sunrise' is 0 degree sunrise
-            sun_keys=["sunrise"],
-        )
-    )
-    # We should move this into the basis function itself.
-    if shadow_minutes > 40:
+
+    # Don't think we want these in production?
+    # They seem to mask off a huge amount of sky.
+    if apply_time_limited_shadow:
+        # Only look toward the southeast in the morning,
+        # permitting emergency dome closure
         mask_bfs.append(
             bf.AltAzShadowTimeLimitedBasisFunction(
                 nside=nside,
@@ -210,13 +201,29 @@ def safety_masks(
                 max_alt=max_alt,
                 min_az=min_az_sunrise,
                 max_az=max_az_sunrise,
-                shadow_minutes=shadow_minutes / 2.0,
+                shadow_minutes=shadow_minutes,
                 # Time until/after sun_keys in hours
                 time_to_sun=time_to_sunrise + shadow_minutes / 60.0,
                 # 'sunrise' is 0 degree sunrise
                 sun_keys=["sunrise"],
             )
         )
+        # We should move this into the basis function itself.
+        if shadow_minutes > 40:
+            mask_bfs.append(
+                bf.AltAzShadowTimeLimitedBasisFunction(
+                    nside=nside,
+                    min_alt=min_alt,
+                    max_alt=max_alt,
+                    min_az=min_az_sunrise,
+                    max_az=max_az_sunrise,
+                    shadow_minutes=shadow_minutes / 2.0,
+                    # Time until/after sun_keys in hours
+                    time_to_sun=time_to_sunrise + shadow_minutes / 60.0,
+                    # 'sunrise' is 0 degree sunrise
+                    sun_keys=["sunrise"],
+                )
+            )
     return mask_bfs
 
 
@@ -429,7 +436,7 @@ def blob_for_long(
     nside: int = DEFAULT_NSIDE,
     band1s: list[str] = ["g"],
     band2s: list[str] = ["i"],
-    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "templates"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -457,7 +464,7 @@ def blob_for_long(
     science_program: str = SCIENCE_PROGRAM,
     observation_reason: str | None = None,
     blob_survey_params: dict | None = None,
-):
+) -> list[BlobSurvey]:
     """
     Generate surveys that take observations in blobs.
 
@@ -630,7 +637,7 @@ def blob_for_long(
 
         if observation_reason is None:
             observation_reason = f"triplet_pairs_{bandname}{bandname2}_{pair_time :.1f}"
-        
+
         surveys.append(
             BlobSurvey(
                 basis_functions,
@@ -755,7 +762,7 @@ def gen_long_gaps_survey(
 def gen_greedy_surveys(
     nside: int = DEFAULT_NSIDE,
     bands: list[str] = ["r", "i", "z", "y"],
-    ignore_obs: list[str] = ["DD", "twilight_near_sun, templates"],
+    ignore_obs: list[str] = ["DD", "twilight_near_sun"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -904,7 +911,7 @@ def generate_blobs(
     nside: int = DEFAULT_NSIDE,
     band1s: list[str] = ["u", "u", "g", "r", "i", "z", "y"],
     band2s: list[str] = ["g", "r", "r", "i", "z", "y", "y"],
-    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "templates"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -1060,6 +1067,7 @@ def generate_blobs(
             )
         )
 
+        # XXX--what is this doing? magic numbers.
         bfs.append(
             (
                 bf.VisitRepeatBasisFunction(
@@ -1116,6 +1124,9 @@ def generate_blobs(
         # Masks, give these 0 weight
         # XXX--more magic numbers
         shadow_minutes = pair_time * 2 + 5
+        # XXX--why do we have both a AltAzShadowMaskBasisFunction here
+        # and in the safety_masks below? And we're not passing max_alt to 
+        # safty_masks
         bfs.append(
             (
                 bf.AltAzShadowMaskBasisFunction(
@@ -1130,6 +1141,11 @@ def generate_blobs(
             time_needed = times_needed[1]
         bfs.append((bf.TimeToTwilightBasisFunction(time_needed=time_needed), 0.0))
         bfs.append((bf.NotTwilightBasisFunction(), 0.0))
+
+        # Add safety masks
+        masks = safety_masks(nside=nside, shadow_minutes=shadow_minutes)
+        for m in masks:
+            bfs.append((m, 0))
 
         # unpack the basis functions and weights
         weights = [val[1] for val in bfs]
@@ -1172,7 +1188,7 @@ def generate_twi_blobs(
     nside: int = DEFAULT_NSIDE,
     band1s: list[str] = ["r", "i", "z", "y"],
     band2s: list[str] = ["i", "z", "y", "y"],
-    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "templates"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -1398,6 +1414,7 @@ def ddf_surveys(
     nexp: dict | None = None,
     survey_start: float = SURVEY_START_MJD,
     survey_length: int = 10,
+    survey_name: str = "deep drilling",
     science_program: str = SCIENCE_PROGRAM,
 ) -> list[ScriptedSurvey]:
     """Generate surveys for DDF observations.
@@ -1436,7 +1453,9 @@ def ddf_surveys(
 
     ddf_dataframe = generate_ddf_df()
 
-    obs_array = generate_ddf_scheduled_obs(ddf_dataframe, expt=expt,
+    obs_array = generate_ddf_scheduled_obs(
+        ddf_dataframe,
+        expt=expt,
         nsnaps=nexp,
         mjd_start=survey_start,
         survey_length=survey_length,
@@ -1446,11 +1465,11 @@ def ddf_surveys(
     )
 
     survey1 = ScriptedSurvey(
-                             # XXX--magic number
+        # XXX--magic number
         safety_masks(nside, shadow_minutes=30),
         nside=nside,
         detailers=detailer_list,
-        survey_name="deep drilling",
+        survey_name=survey_name,
     )
     survey1.set_script(obs_array)
 
@@ -1459,7 +1478,12 @@ def ddf_surveys(
     return result
 
 
-def ecliptic_target(nside=DEFAULT_NSIDE, dist_to_eclip=40.0, dec_max=30.0, mask=None):
+def ecliptic_target(
+    nside: int = DEFAULT_NSIDE,
+    dist_to_eclip: float = 40.0,
+    dec_max: float = 30.0,
+    mask: npt.NDArray = 1,
+) -> npt.NDArray:
     """Generate a target_map for the area around the ecliptic
 
     Parameters
@@ -1486,39 +1510,39 @@ def ecliptic_target(nside=DEFAULT_NSIDE, dist_to_eclip=40.0, dec_max=30.0, mask=
     )
     result[good] += 1
 
-    if mask is not None:
-        result *= mask
+    result *= mask
 
     return result
 
 
 def generate_twilight_near_sun(
-    nside=DEFAULT_NSIDE,
-    night_pattern=None,
-    nexp=1,
-    exptime=15,
-    ideal_pair_time=5.0,
-    max_airmass=2.0,
-    camera_rot_limits=CAMERA_ROT_LIMITS,
-    time_needed=10,
-    footprint_mask=None,
-    footprint_weight=0.1,
-    slewtime_weight=3.0,
-    stayband_weight=3.0,
-    min_area=None,
-    bands="riz",
-    n_repeat=4,
-    sun_alt_limit=-14.8,
-    slew_estimate=4.5,
-    moon_distance=30.0,
-    shadow_minutes=0,
-    min_alt=20.0,
-    max_alt=76.0,
-    max_elong=60.0,
-    ignore_obs=["DD", "pair", "long", "blob", "greedy"],
-    band_dist_weight=0.3,
-    time_to_12deg=25.0,
-):
+    nside: int = DEFAULT_NSIDE,
+    night_pattern: list[bool] | None = None,
+    nexp: int = 1,
+    exptime: float = 15,
+    ideal_pair_time: float = 5.0,
+    max_airmass: float = 2.0,
+    camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
+    time_needed: float = 10.0,
+    footprint_mask: npt.NDArray = 1,
+    footprint_weight: float = 0.1,
+    slewtime_weight: float = 3.0,
+    stayband_weight: float = 3.0,
+    min_area: float | None = None,
+    bands: str = "riz",
+    n_repeat: int = 4,
+    sun_alt_limit: float = -14.8,
+    slew_estimate: float = 4.5,
+    moon_distance: float = 30.0,
+    shadow_minutes: float = 0,
+    min_alt: float = 20.0,
+    max_alt: float = 76.0,
+    max_elong: float = 60.0,
+    ignore_obs: list[str] = ["DD", "pair", "long", "blob", "greedy", "template"],
+    band_dist_weight: float = 0.3,
+    time_to_12deg: float = 25.0,
+    science_program: str = SCIENCE_PROGRAM,
+) -> list[BlobSurvey]:
     """Generate a survey for observing NEO objects in twilight
 
     Parameters
@@ -1687,12 +1711,15 @@ def generate_twilight_near_sun(
                 detailers=detailer_list,
                 twilight_scale=False,
                 area_required=min_area,
+                science_program=science_program,
             )
         )
     return surveys
 
 
-def set_run_info(dbroot=None, file_end="", out_dir="."):
+def set_run_info(
+    dbroot: str | None = None, file_end: str = "", out_dir: str = "."
+) -> tuple[str, dict]:
     """Gather versions of software used to record"""
     extra_info = {}
     exec_command = ""
@@ -1724,21 +1751,21 @@ def set_run_info(dbroot=None, file_end="", out_dir="."):
 
 
 def run_sched(
-    scheduler,
-    survey_length=365.25,
-    nside=DEFAULT_NSIDE,
-    filename=None,
-    verbose=False,
-    extra_info=None,
-    illum_limit=40.0,
-    mjd_start=60796.0,
-    event_table=None,
+    scheduler: CoreScheduler,
+    survey_length: float = 365.25,
+    nside: int = DEFAULT_NSIDE,
+    filename: str | None = None,
+    verbose: bool = False,
+    extra_info: dict | None = None,
+    illum_limit: float = 40.0,
+    mjd_start: float = 60796.0,
+    event_table: npt.NDArray | None = None,
     sim_to_o=None,
-    snapshot_dir=None,
-    readtime=3.07,
-    band_changetime=140.,
-    tma_performance=40
-):
+    snapshot_dir: str | None = None,
+    readtime: float = 3.07,
+    band_changetime: float = 140.0,
+    tma_performance: float = 40.0,
+) -> tuple[ModelObservatory, CoreScheduler, ObservationArray]:
     """Run survey"""
     n_visit_limit = None
     fs = SimpleBandSched(illum_limit=illum_limit)
@@ -1747,7 +1774,7 @@ def run_sched(
     tma_kwargs = tma_movement(percent=tma_performance)
     observatory.setup_telescope(**tma_kwargs)
     observatory.setup_camera(band_changetime=band_changetime, readtime=readtime)
-    
+
     observatory, scheduler, observations = sim_runner(
         observatory,
         scheduler,
@@ -1765,7 +1792,9 @@ def run_sched(
     return observatory, scheduler, observations
 
 
-def gen_scheduler(args):
+def gen_scheduler(
+    args: argparse.ArgumentParser,
+) -> tuple[ModelObservatory, CoreScheduler, ObservationArray] | CoreScheduler:
     survey_length = args.survey_length  # Days
     out_dir = args.out_dir
     verbose = args.verbose
@@ -1792,7 +1821,7 @@ def gen_scheduler(args):
     ei_area_req = 0.0  # Sky area required before attempting inner solar system
     per_night = True  # Dither DDF per night
     camera_ddf_rot_limit = 75.0  # degrees
-    repeat_weight = 0  # Maybe set to -1? 
+    repeat_weight = 0  # Maybe set to -1?
 
     # Be sure to also update and regenerate DDF grid save file
     # if changing mjd_start
@@ -1969,7 +1998,7 @@ def gen_scheduler(args):
         return observatory, scheduler, observations
 
 
-def sched_argparser():
+def sched_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--verbose", dest="verbose", action="store_true", help="Print more output"

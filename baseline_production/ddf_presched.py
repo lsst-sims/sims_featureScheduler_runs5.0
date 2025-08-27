@@ -9,6 +9,8 @@ import os
 import warnings
 
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 from rubin_scheduler.data import get_data_dir
 from rubin_scheduler.scheduler.utils import ScheduledObservationArray
 from rubin_scheduler.site_models import Almanac
@@ -16,15 +18,15 @@ from rubin_scheduler.utils import SURVEY_START_MJD, calc_season, ddf_locations
 
 
 def ddf_slopes(
-    ddf_name,
-    raw_obs,
-    night_season,
-    season_seq=30,
-    min_season_length=0,
-    boost_early_factor=None,
-    boost_factor_third=None,
-    boost_factor_fractional=None,
-):
+    ddf_name: str,
+    raw_obs: npt.NDArray,
+    night_season: npt.NDArray,
+    season_seq: int = 30,
+    min_season_length: float = 0,
+    boost_early_factor: float | None = None,
+    boost_factor_third: float | None = None,
+    boost_factor_fractional: float | None = None,
+) -> npt.NDArray:
     """
     Let's make custom slopes for each DDF
 
@@ -109,7 +111,11 @@ def ddf_slopes(
     return cumulative_desired
 
 
-def match_cumulative(cumulative_desired, mask=None, no_duplicate=True):
+def match_cumulative(
+    cumulative_desired: npt.NDArray,
+    mask: npt.NDArray | None = None,
+    no_duplicate: bool = True,
+) -> npt.NDArray:
     """Generate a schedule that tries to match the desired cumulative
     distribution given a mask
 
@@ -167,28 +173,28 @@ def match_cumulative(cumulative_desired, mask=None, no_duplicate=True):
 
 
 def optimize_ddf_times(
-    ddf_name,
-    ddf_RA,
-    ddf_grid,
-    sun_limit=-18,
-    sequence_time=60.0,
-    airmass_limit=2.5,
-    sky_limit=None,
-    g_depth_limit=23.5,
-    offseason_length=73.05,
-    low_season_frac=0,
-    low_season_rate=0.3,
-    mjd_start=SURVEY_START_MJD,
-    season_seq=30,
-    boost_early_factor=None,
-    boost_factor_third=None,
-    boost_factor_fractional=None,
-    only_season=None,
-    mask_even_odd=None,
+    ddf_name: str,
+    ddf_RA: float,
+    ddf_grid: float,
+    sun_limit: float = -18,
+    sequence_time: float = 60.0,
+    airmass_limit: float = 2.5,
+    sky_limit: float | None = None,
+    g_depth_limit: float = 23.5,
+    offseason_length: float = 73.05,
+    low_season_frac: float = 0,
+    low_season_rate: float = 0.3,
+    mjd_start: float = SURVEY_START_MJD,
+    season_seq: int = 30,
+    boost_early_factor: float | None = None,
+    boost_factor_third: float | None = None,
+    boost_factor_fractional: float | None = None,
+    only_season: int | None = None,
+    mask_even_odd: bool | None = None,
     moon_illum_lt=None,
     moon_illum_gt=None,
-    early_late_season_only=False,
-):
+    early_late_season_only: bool = False,
+) -> tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
     """
 
     Parameters
@@ -423,27 +429,27 @@ def optimize_ddf_times(
 
 
 def generate_ddf_scheduled_obs(
-    configs_df,
-    data_file=None,
-    mjd_tol=15,
-    expt={"u": 38, "g": 29.2, "r": 29.2, "i": 29.2, "z": 29.2, "y": 29.2},
-    alt_min=25,
-    alt_max=85,
-    HA_min=21.0,
-    HA_max=3.0,
-    sun_alt_max=-18,
-    moon_min_distance=25.0,
-    dist_tol=3.0,
-    bands="ugrizy",
-    nsnaps={"u": 1, "g": 2, "r": 2, "i": 2, "z": 2, "y": 2},
-    mjd_start=SURVEY_START_MJD,
-    survey_length=10.0,
-    low_season_frac=0,
-    low_season_rate=0.3,
-    overhead=2.0,
-    illum_limit=40.0,
-    science_program=None,
-):
+    configs_df: pd.DataFrame,
+    data_file: str | None = None,
+    mjd_tol: float = 15.0,
+    expt: dict = {"u": 38.0, "g": 29.2, "r": 29.2, "i": 29.2, "z": 29.2, "y": 29.2},
+    alt_min: float = 25.0,
+    alt_max: float = 85.0,
+    HA_min: float = 21.0,
+    HA_max: float = 3.0,
+    sun_alt_max: float = -18.0,
+    moon_min_distance: float = 25.0,
+    dist_tol: float = 3.0,
+    bands: str = "ugrizy",
+    nsnaps: dict = {"u": 1, "g": 2, "r": 2, "i": 2, "z": 2, "y": 2},
+    mjd_start: float = SURVEY_START_MJD,
+    survey_length: float = 10.0,
+    low_season_frac: float = 0.0,
+    low_season_rate: float = 0.3,
+    overhead: float = 2.0,
+    illum_limit: float = 40.0,
+    science_program: str | None = None,
+) -> ScheduledObservationArray:
     """
 
     Parameters

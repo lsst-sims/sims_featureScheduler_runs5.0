@@ -1,12 +1,12 @@
 __all__ = ("generate_ddf_df",)
 
-import pandas as pd
 import copy
 
+import pandas as pd
 
-def generate_ddf_df():
+
+def generate_ddf_df() -> pd.DataFrame:
     """Define the sequences for each field"""
-
 
     short_squences = [
         {
@@ -245,7 +245,7 @@ def generate_ddf_df():
                     row = copy.copy(dict_for_df)
                     for key in seq:
                         row[key] = seq[key]
-            
+
                     dataframes.append(pd.DataFrame.from_dict(row, orient="index").T)
 
     result = pd.concat(dataframes)
