@@ -184,7 +184,7 @@ def optimize_ddf_times(
     offseason_length: float = 73.05,
     low_season_frac: float = 0,
     low_season_rate: float = 0.3,
-    mjd_start: float = SURVEY_START_MJD,
+    survey_start_mjd: float = SURVEY_START_MJD,
     season_seq: int = 30,
     boost_early_factor: float | None = None,
     boost_factor_third: float | None = None,
@@ -249,7 +249,7 @@ def optimize_ddf_times(
         of the season. During the standard season, the 'rate' is 1.
         This is used in `ddf_slopes` to define the desired number of
         cumulative observations for each DDF over time.
-    mjd_start : `float`, optional
+    survey_start_mjd : `float`, optional
         The MJD of the start of the survey. Used to identify the
         starting point when counting seasons.
         Default SURVEY_START_MJD.
@@ -335,7 +335,7 @@ def optimize_ddf_times(
     night_mjd = ddf_grid["mjd"][indx]
 
     # Calculate season values for each night.
-    night_season = calc_season(ddf_RA, night_mjd, mjd_start)
+    night_season = calc_season(ddf_RA, night_mjd, survey_start_mjd)
 
     # convert so we start at season 0 no matter what.
     night_season = night_season - np.floor(np.min(night_season))
@@ -442,7 +442,7 @@ def generate_ddf_scheduled_obs(
     dist_tol: float = 3.0,
     bands: str = "ugrizy",
     nsnaps: dict = {"u": 1, "g": 2, "r": 2, "i": 2, "z": 2, "y": 2},
-    mjd_start: float = SURVEY_START_MJD,
+    survey_start_mjd: float = SURVEY_START_MJD,
     survey_length: float = 10.0,
     low_season_frac: float = 0.0,
     low_season_rate: float = 0.3,
@@ -483,7 +483,7 @@ def generate_ddf_scheduled_obs(
         The band names.
     nsnaps : `list of ints` ([1, 2, 2, 2, 2, 2])
         The number of snaps to use per band
-    mjd_start : `float`
+    survey_start_mjd : `float`
         Starting MJD of the survey. Default None, which calls
         rubin_sim.utils.SURVEY_START_MJD
     survey_length : `float`
@@ -529,14 +529,14 @@ def generate_ddf_scheduled_obs(
     ddf_data = np.load(data_file)
     ddf_grid = ddf_data["ddf_grid"].copy()
 
-    mjd_max = mjd_start + survey_length * 365.25
+    mjd_max = survey_start_mjd + survey_length * 365.25
 
     # check if our pre-computed grid is over the time range we think
     # we are scheduling for
-    if (ddf_grid["mjd"].min() > mjd_start) | (ddf_grid["mjd"].max() < mjd_max):
+    if (ddf_grid["mjd"].min() > survey_start_mjd) | (ddf_grid["mjd"].max() < mjd_max):
         warnings.warn("Pre-computed DDF properties don't match requested survey times")
 
-    in_range = np.where((ddf_grid["mjd"] >= mjd_start) & (ddf_grid["mjd"] <= mjd_max))
+    in_range = np.where((ddf_grid["mjd"] >= survey_start_mjd) & (ddf_grid["mjd"] <= mjd_max))
     ddf_grid = ddf_grid[in_range]
 
     # can loop over each row to generate the observations that
@@ -598,7 +598,7 @@ def generate_ddf_scheduled_obs(
                 # XXX--magic number should move to config file
                 low_season_frac=80.0 / 200.0,
                 low_season_rate=1.0,
-                mjd_start=mjd_start,
+                survey_start_mjd=survey_start_mjd,
                 season_seq=n_sequences,
                 only_season=row["season"],
                 mask_even_odd=mask_even_odd,
@@ -619,7 +619,7 @@ def generate_ddf_scheduled_obs(
                 offseason_length=offseason_length,
                 low_season_frac=0,
                 low_season_rate=0.3,
-                mjd_start=mjd_start,
+                survey_start_mjd=survey_start_mjd,
                 season_seq=n_sequences,
                 only_season=row["season"],
                 mask_even_odd=mask_even_odd,

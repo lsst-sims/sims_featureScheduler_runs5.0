@@ -73,7 +73,7 @@ def example_scheduler(**kwargs) -> CoreScheduler:
 
 def generate_baseline_coresched(
     nside: int = DEFAULT_NSIDE,
-    mjd_start: float = SURVEY_START_MJD,
+    survey_start_mjd: float = SURVEY_START_MJD,
     no_too: bool = False,
 ) -> CoreScheduler:
     """Provide an example baseline survey-strategy scheduler.
@@ -82,7 +82,7 @@ def generate_baseline_coresched(
     ----------
     nside : `int`
         Nside for the scheduler maps and basis functions.
-    mjd_start : `float`
+    survey_start_mjd : `float`
         Start date for the survey (MJD).
     no_too : `bool`
         Turn off ToO simulation. Default False.
@@ -99,7 +99,7 @@ def generate_baseline_coresched(
     args.dbroot = "example_"
     args.outDir = "."
     args.nside = nside
-    args.mjd_start = mjd_start
+    args.survey_start_mjd = survey_start_mjd
     scheduler = gen_scheduler(args)
     return scheduler
 
@@ -436,7 +436,7 @@ def blob_for_long(
     nside: int = DEFAULT_NSIDE,
     band1s: list[str] = ["g"],
     band2s: list[str] = ["i"],
-    ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "ToO"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -748,7 +748,7 @@ def gen_long_gaps_survey(
         scripted = ScriptedSurvey(
             safety_masks(nside, shadow_minutes=pair_time),
             nside=nside,
-            ignore_obs=["blob", "DDF", "twi", "pair", "templates"],
+            ignore_obs=["blob", "DDF", "twi", "pair", "templates", "ToO"],
             science_program=science_program,
             detailers=[detailers.LabelRegionsAndDDFs()],
         )
@@ -762,7 +762,7 @@ def gen_long_gaps_survey(
 def gen_greedy_surveys(
     nside: int = DEFAULT_NSIDE,
     bands: list[str] = ["r", "i", "z", "y"],
-    ignore_obs: list[str] = ["DD", "twilight_near_sun"],
+    ignore_obs: list[str] = ["DD", "twilight_near_sun", "ToO"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -911,7 +911,7 @@ def generate_blobs(
     nside: int = DEFAULT_NSIDE,
     band1s: list[str] = ["u", "u", "g", "r", "i", "z", "y"],
     band2s: list[str] = ["g", "r", "r", "i", "z", "y", "y"],
-    ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "ToO"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -1188,7 +1188,7 @@ def generate_twi_blobs(
     nside: int = DEFAULT_NSIDE,
     band1s: list[str] = ["r", "i", "z", "y"],
     band2s: list[str] = ["i", "z", "y", "y"],
-    ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun", "ToO"],
     camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
     exptime: float = EXPTIME,
     nexp: int = NEXP,
@@ -1457,7 +1457,7 @@ def ddf_surveys(
         ddf_dataframe,
         expt=expt,
         nsnaps=nexp,
-        mjd_start=survey_start,
+        survey_start_mjd=survey_start,
         survey_length=survey_length,
         # XXX--magic number
         sun_alt_max=-24,
@@ -1538,7 +1538,7 @@ def generate_twilight_near_sun(
     min_alt: float = 20.0,
     max_alt: float = 76.0,
     max_elong: float = 60.0,
-    ignore_obs: list[str] = ["DD", "pair", "long", "blob", "greedy", "template"],
+    ignore_obs: list[str] = ["DD", "pair", "long", "blob", "greedy", "template", "ToO"],
     band_dist_weight: float = 0.3,
     time_to_12deg: float = 25.0,
     science_program: str = SCIENCE_PROGRAM,
@@ -1758,7 +1758,7 @@ def run_sched(
     verbose: bool = False,
     extra_info: dict | None = None,
     illum_limit: float = 40.0,
-    mjd_start: float = 60796.0,
+    survey_start_mjd: float = 60796.0,
     event_table: npt.NDArray | None = None,
     sim_to_o=None,
     snapshot_dir: str | None = None,
@@ -1769,7 +1769,7 @@ def run_sched(
     """Run survey"""
     n_visit_limit = None
     fs = SimpleBandSched(illum_limit=illum_limit)
-    observatory = ModelObservatory(nside=nside, mjd_start=mjd_start, sim_to_o=sim_to_o)
+    observatory = ModelObservatory(nside=nside, mjd_start=survey_start_mjd, sim_to_o=sim_to_o)
 
     tma_kwargs = tma_movement(percent=tma_performance)
     observatory.setup_telescope(**tma_kwargs)
@@ -1824,8 +1824,8 @@ def gen_scheduler(
     repeat_weight = 0  # Maybe set to -1?
 
     # Be sure to also update and regenerate DDF grid save file
-    # if changing mjd_start
-    mjd_start = SURVEY_START_MJD + mjd_plus
+    # if changing survey_start_mjd
+    survey_start_mjd = SURVEY_START_MJD + mjd_plus
 
     fileroot, extra_info = set_run_info(
         dbroot=dbroot,
@@ -1862,13 +1862,13 @@ def gen_scheduler(
     footprint_mask[np.where(footprints_hp["r"] > 0)] = 1
 
     # Use the Almanac to find the position of the sun at the start of survey
-    almanac = Almanac(mjd_start=mjd_start)
-    sun_moon_info = almanac.get_sun_moon_positions(mjd_start)
+    almanac = Almanac(mjd_start=survey_start_mjd)
+    sun_moon_info = almanac.get_sun_moon_positions(survey_start_mjd)
     sun_ra_start = sun_moon_info["sun_RA"].copy()
 
     footprints = make_rolling_footprints(
         fp_hp=footprints_hp,
-        mjd_start=mjd_start,
+        mjd_start=survey_start_mjd,
         sun_ra_start=sun_ra_start,
         nslice=nslice,
         scale=rolling_scale,
@@ -1929,7 +1929,7 @@ def gen_scheduler(
         nside=nside,
         nexp=NEXP,
         footprints=footprints,
-        survey_start=mjd_start,
+        survey_start=survey_start_mjd,
         u_exptime=U_EXPTIME,
     )
     twi_blobs = generate_twi_blobs(
@@ -1990,7 +1990,7 @@ def gen_scheduler(
             extra_info=extra_info,
             nside=nside,
             illum_limit=illum_limit,
-            mjd_start=mjd_start,
+            survey_start_mjd=survey_start_mjd,
             event_table=event_table,
             sim_to_o=sim_ToOs,
             snapshot_dir=snapshot_dir,
