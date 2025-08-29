@@ -536,7 +536,9 @@ def generate_ddf_scheduled_obs(
     if (ddf_grid["mjd"].min() > survey_start_mjd) | (ddf_grid["mjd"].max() < mjd_max):
         warnings.warn("Pre-computed DDF properties don't match requested survey times")
 
-    in_range = np.where((ddf_grid["mjd"] >= survey_start_mjd) & (ddf_grid["mjd"] <= mjd_max))
+    in_range = np.where(
+        (ddf_grid["mjd"] >= survey_start_mjd) & (ddf_grid["mjd"] <= mjd_max)
+    )
     ddf_grid = ddf_grid[in_range]
 
     # can loop over each row to generate the observations that
