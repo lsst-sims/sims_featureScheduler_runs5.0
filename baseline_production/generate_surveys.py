@@ -1,5 +1,6 @@
 __all__ = (
     "gen_long_gaps_survey",
+    "gen_template_surveys",
     "gen_greedy_surveys",
     "generate_blobs",
     "generate_twi_blobs",
@@ -362,6 +363,194 @@ def standard_bf(
     bfs.append((bf.BandLoadedBasisFunction(bandnames=bandnames), 0))
 
     return bfs
+
+
+def gen_template_surveys(
+    footprints: Footprints,
+    nside: int = DEFAULT_NSIDE,
+    band1s: list[str] = ["u", "g", "r", "i", "z", "y"],
+    dark_only: list[str] = ["u", "g"],
+    ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
+    camera_rot_limits: tuple[float, float] = CAMERA_ROT_LIMITS,
+    exptime: float = EXPTIME,
+    nexp: int = NEXP,
+    u_exptime: float = U_EXPTIME,
+    u_nexp: int = U_NEXP,
+    n_obs_template: dict | None = None,
+    pair_time: float = 33.0,
+    area_required: float = 50.0,
+    HA_min: float = 2.5,
+    HA_max: float = 24 - 2.5,
+    max_alt: float = 76.0,
+    science_program: str = SCIENCE_PROGRAM,
+    blob_survey_params: dict | None = None,
+) -> list[BlobSurvey]:
+    """Coherent area surveys (BlobSurvey with single visit) that
+    are intended to acquire template visits in a convenient yet
+    aggressive manner.
+
+    Parameters
+    ----------
+    footprints : `rubin_scheduler.scheduler.utils.Footprints`
+        The Footprints object for the Surveys.
+    nside : `int`
+        Nside for the surveys.
+    band1s : `list` [ `str` ]
+        The bands in which to obtain templates, within the Footprints.
+    dark_only : `list` [ `str` ]
+        The bands to only attempt during dark-time.
+    ignore_obs : `str` or `list` [ `str` ]
+        Strings to match within scheduler_note to flag observations to ignore.
+    camera_rot_limits : `list` [ `float`, `float` ]
+        Camera rotator limits (in degrees) for the dither rotation detailer.
+    exptime : `float`
+        The exposure time for grizy visits.
+    nexp : `int`
+        The number of exposures per visit for grizy visits.
+    u_exptime : `float`
+        The exposure time for u band visits.
+    u_nexp : `int`
+        The number of exposures per visit for u band visits.
+    n_obs_template : `dict` { `str` : `int` }
+        Number of visits per bandpass before masking the Survey healpix.
+        When this many visits are acquired, the pixel is considered "done".
+    pair_time : `float`
+        The time until the end of the first pass of the Blob.
+        Since there is no second filter, this is the amount of time
+        spent in the Blob.
+    area_required : `float`
+        The area required that needs templates, before the BlobSurvey will
+        activate.
+    HA_min : `float`
+        The minimum HA to consider when considering template area.
+    HA_max : `float`
+        The maximum HA to consider when considering template area.
+    max_alt : `float`
+        The maximum altitude to use for the Surveys.
+        Typically for BlobSurveys this is set lower than the max available,
+        to about 76 degrees, to avoid long dome slews near azimuth.
+        This is masked separately from the `safety_masks`.
+    science_program : `str`
+        The science_program to use for visits from these surveys.
+    blob_survey_params : `dict` or None
+        A dictionary of additional kwargs to pass to the BlobSurvey.
+        In particular, the times for typical slews, readtime, etc. are
+        useful for setting the number of pointings to schedule within
+        pair_time.
+    """
+
+    if n_obs_template is None:
+        n_obs_template = {"u": 4, "g": 4, "r": 4, "i": 4, "z": 4, "y": 4}
+
+    if blob_survey_params is None:
+        blob_survey_params = {
+            "slew_approx": 7.5,
+            "band_change_approx": 140.0,
+            "read_approx": 2.4,
+            "flush_time": 30.0,
+            "smoothing_kernel": None,
+            "nside": nside,
+            "seed": 42,
+            "dither": "night",
+            "twilight_scale": True,
+        }
+
+    surveys = []
+
+    for bandname in band1s:
+        # Set up Detailers for camera rotator and ordering in altitude.
+        detailer_list = []
+        detailer_list.append(
+            detailers.CameraRotDetailer(
+                min_rot=np.min(camera_rot_limits), max_rot=np.max(camera_rot_limits)
+            )
+        )
+        detailer_list.append(detailers.CloseAltDetailer())
+        detailer_list.append(
+            detailers.BandNexp(bandname="u", nexp=u_nexp, exptime=u_exptime)
+        )
+
+        # List to hold tuples of (basis_function_object, weight)
+        bfs = []
+
+        bfs.extend(
+            standard_bf(
+                nside,
+                bandname=bandname,
+                bandname2=None,
+                footprints=footprints,
+                n_obs_template=n_obs_template,
+            )
+        )
+
+        bfs.append(
+            (
+                bf.AltAzShadowMaskBasisFunction(
+                    nside=nside, shadow_minutes=pair_time, max_alt=max_alt, pad=3.0
+                ),
+                0,
+            )
+        )
+
+        # not in twilight bf
+        bfs.append((bf.TimeToTwilightBasisFunction(time_needed=pair_time), 0.0))
+        bfs.append((bf.NotTwilightBasisFunction(), 0.0))
+        bfs.append(
+            (bf.RevHaMaskBasisFunction(ha_min=HA_min, ha_max=HA_max, nside=nside), 0.0)
+        )
+
+        # Need a once in night mask
+        bfs.append((bf.NInNightMaskBasisFunction(n_limit=1, nside=nside), 0.0))
+
+        # If u or g, only when moon is down
+        if bandname in dark_only:
+            bfs.append((bf.MoonAltLimitBasisFunction(alt_limit=-5), 0.0))
+
+        # limit to first year
+        bfs.append((bf.OnlyBeforeNightBasisFunction(night_max=366), 0.0))
+
+        # Mask anything observed n_obs_template times
+        # XXX--Probably need an image quality cut of some kind here?
+        bfs.append(
+            (
+                bf.MaskAfterNObsBasisFunction(
+                    nside=nside, n_max=n_obs_template[bandname], bandname=bandname
+                ),
+                0.0,
+            )
+        )
+
+        # Add safety masks
+        masks = safety_masks(nside=nside, shadow_minutes=pair_time)
+        for m in masks:
+            bfs.append((m, 0))
+
+        # unpack the basis functions and weights
+        weights = [val[1] for val in bfs]
+        basis_functions = [val[0] for val in bfs]
+
+        survey_name = "templates, %s" % bandname
+
+        surveys.append(
+            BlobSurvey(
+                basis_functions,
+                weights,
+                bandname1=bandname,
+                bandname2=None,
+                exptime=exptime,
+                ideal_pair_time=pair_time,
+                survey_name=survey_name,
+                science_program=science_program,
+                observation_reason=f"template_blob_{bandname}_{pair_time :.1f}",
+                ignore_obs=ignore_obs,
+                nexp=nexp,
+                detailers=detailer_list,
+                area_required=area_required,
+                **blob_survey_params,
+            )
+        )
+
+    return surveys
 
 
 def blob_for_long(
