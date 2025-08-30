@@ -95,14 +95,18 @@ if __name__ == "__main__":
     t2 = datetime.datetime.now()
     print("time to run in parallel", t2-t1)
 
+    np.savez("metric_parallel.npz", result=result)
+
     # run classic style
     sl = maf.Slicer(nside=nside)
     metric = maf.SNNSNMetric()
 
-    sn_array = sl(visits_array, metric)
+    result = sl(visits_array, metric)
 
     t3 = datetime.datetime.now()
     print("p2, time to run single core", t3-t2)
+
+    np.savez("metric_single.npz", result=result)
 
 
     
