@@ -89,7 +89,7 @@ if __name__ == "__main__":
         metric = maf.SNNSNMetric()
 
     t1 = datetime.datetime.now()
-    result = launch_jobs(shared_data, slicer, metric)
+    result = launch_jobs(shared_data, slicer, metric, num_jobs=12)
     shared_data.unlink()
 
     t2 = datetime.datetime.now()
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     sl = maf.Slicer(nside=nside)
     metric = maf.SNNSNMetric()
 
-    result = sl(visits_array, metric)
+    # result = sl(visits_array, metric)
 
     t3 = datetime.datetime.now()
     print("p2, time to run single core", t3-t2)
