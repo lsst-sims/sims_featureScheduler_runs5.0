@@ -2,7 +2,7 @@ import numpy as np
 from itertools import repeat
 import datetime
 
-from multiprocessing import Pool, shared_memory, Manager
+from multiprocessing import Pool, shared_memory, Manager, set_start_method
 import rubin_sim.maf_proto as maf
 import sqlite3
 import pandas as pd
@@ -68,6 +68,10 @@ def launch_jobs(shared_data, slicer, metric, num_jobs=6):
 
 
 if __name__ == "__main__":
+
+    # This seems to be required for things to
+    # work on mac OS. 
+    set_start_method("fork", force=True)
 
     nside = 16
     fast_metric = False
