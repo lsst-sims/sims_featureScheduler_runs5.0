@@ -74,7 +74,9 @@ if __name__ == "__main__":
     set_start_method("fork", force=True)
 
     nside = 16
-    fast_metric = False
+    fast_metric = True
+
+    info = {}
 
     # Read in observations
     # Read in some visits
@@ -94,6 +96,10 @@ if __name__ == "__main__":
 
     t1 = datetime.datetime.now()
     result = launch_jobs(shared_data, slicer, metric, num_jobs=12)
+
+    # manually add the info
+    info = slicer.add_info(metric, info)
+
     shared_data.unlink()
 
     t2 = datetime.datetime.now()
