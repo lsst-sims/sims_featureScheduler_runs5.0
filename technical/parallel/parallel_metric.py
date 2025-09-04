@@ -32,7 +32,7 @@ class SharedNumpyArray:
         return np.ndarray(self._shape, self._dtype, buffer=self._shared.buf)
 
     def copy(self):
-        """Copy arrray
+        """Copy array
         """
         return np.copy(self.read_array())
 

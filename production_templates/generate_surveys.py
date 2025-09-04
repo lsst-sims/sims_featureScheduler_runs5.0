@@ -24,10 +24,12 @@ from rubin_scheduler.scheduler.surveys import (
     ScriptedSurvey,
 )
 from rubin_scheduler.scheduler.utils import ConstantFootprint, Footprints
-from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD, _hpid2_ra_dec
+from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD, _hpid2_ra_dec, calc_season
 
 from ddf_df_gen import generate_ddf_df
 from ddf_presched import generate_ddf_scheduled_obs
+
+from rubin_scheduler.scheduler import BaseSurveyFeature
 
 # Set up values to use as kwarg defaults.
 NEXP = 1
@@ -36,6 +38,102 @@ EXPTIME = 30.0
 U_EXPTIME = 38.0
 CAMERA_ROT_LIMITS = (-80.0, 80.0)
 SCIENCE_PROGRAM = "BLOCK-365"
+
+
+
+class NObservationsSeason(BaseSurveyFeature):
+    """
+    Track the number of observations that have been made at each healpix.
+    Set count to zero if the season changes.
+
+    Parameters
+    ----------
+    bandname : `str` or `list` [`str`] or None
+        String or list that has all the bands that can count.
+        Default None counts all bands.
+    nside : `int`
+        The nside of the healpixel map to use.
+        Default None uses scheduler default.
+    scheduler_note : `str` or None, optional
+        The scheduler_note to match.
+        Scheduler_note values which match this OR which contain this value
+        as a subset of their string will match.
+    survey_name : `str` or None
+        The scheduler_note value to match.
+        Deprecated in favor of scheduler_note, but provided for backward
+        compatibility. Will be removed in the future.
+    """
+
+    def __init__(self, bandname=None, nside=DEFAULT_NSIDE, seeing_limit=1.3,
+                 mjd_start=SURVEY_START_MJD,
+                 scheduler_note=None, survey_name=None):
+        self.feature = np.zeros(hp.nside2npix(nside), dtype=float)
+
+        self.season = np.zeros(hp.nside2npix(nside), dtype=int) - 1000.
+        self.ra, self.dec = _hpid2_ra_dec(nside, np.arange(self.seasons.size))
+        self.bandname = bandname
+        if scheduler_note is None and survey_name is not None:
+            self.scheduler_note = survey_name
+        else:
+            self.scheduler_note = scheduler_note
+        self.bins = np.arange(hp.nside2npix(nside) + 1) - 0.5
+
+    def add_observations_array(self, observations_array, observations_hpid):
+        raise ValueError
+
+    def add_observation(self, observation, indx=None):
+        if self.bandname is None or observation["band"][0] in self.bandname:
+            if self.scheduler_note is None or observation["scheduler_note"][0] in self.scheduler_note:
+                if observation["FWHMeff"] < self.seeing_limit:
+                    seasons = calc_season(np.degrees(self.ra[indx]), observation["mjd"],
+                                          mjd_start=self.mjd_start)
+                    # Has the season changed anywhere? If so, reset count to zero and
+                    # Update the current season there.
+                    changed_seasons_indx = np.where((self.season[indx] - seasons) != 0)[0]
+                    if changed_seasons_indx.size > 0:
+                        self.feature[indx[changed_seasons_indx]] = 0
+                        self.season[indx] = seasons
+
+                    self.feature[indx] += 1
+
+
+class MaskPoorSeeing(bf.BaseBasisFunction):
+    def __init__(self, bandname, seeing_limit=1.3, nside=DEFAULT_NSIDE):
+        super().__init__(nside=nside)
+        self.seeing_limit = seeing_limit
+        self.result = np.zeros(hp.nside2npix(self.nside), dtype=float)
+        self.bandname = bandname
+    def __call__(self, conditions, indx=None):
+        result = self.result.copy()
+        to_mask = np.where(conditions.fwhm_eff[self.bandname] > self.seeing_limit)
+        result[to_mask] = np.nan
+        return result
+
+
+class MaskAfterNObsBasisFunction(bf.BaseBasisFunction):
+    """Mask after a HEALpix has been observed N times.
+
+    Parameters
+    ----------
+    n_max : `int`
+        The maximum number of times. Default 3.
+    bandname : `str`
+        The bandname. Default None uses all bands.
+    """
+
+    def __init__(self, n_max=3, nside=DEFAULT_NSIDE, bandname=None,
+                 seeing_limit=1.3, mjd_start=SURVEY_START_MJD):
+        super(MaskAfterNObsBasisFunction, self).__init__(nside=nside)
+        self.n_max = n_max
+        self.survey_features["nobs"] = NObservationsSeason(nside=nside, bandname=bandname,
+                                                           mjd_start=mjd_start, seeing_limit=seeing_limit,)
+        self.result = np.zeros(hp.nside2npix(self.nside), dtype=float)
+
+    def _calc_value(self, conditions, indx=None):
+        result = self.result.copy()
+        to_mask = np.where(self.survey_features["nobs"].feature >= self.n_max)[0]
+        result[to_mask] = np.nan
+        return result
 
 
 def safety_masks(
@@ -151,9 +249,6 @@ def standard_bf(
     footprint_weight: float = 1.5,
     slewtime_weight: float = 3.0,
     stayband_weight: float = 3.0,
-    template_weight: float = 12.0,
-    u_template_weight: float = 50.0,
-    g_template_weight: float = 50.0,
     footprints: Footprints | None = None,
     fiducial_fwhm: float = 1.3,
     n_obs_template: dict | None = None,
@@ -220,15 +315,7 @@ def standard_bf(
         (rubin_scheduler.scheduler.BasisFunction object, float)
 
     """
-    template_weights = {
-        "u": u_template_weight,
-        "g": g_template_weight,
-        "r": template_weight,
-        "i": template_weight,
-        "z": template_weight,
-        "y": template_weight,
-    }
-
+    
     bfs = []
 
     if bandname2 is not None:
@@ -295,52 +382,6 @@ def standard_bf(
     else:
         bfs.append((bf.BandChangeBasisFunction(bandname=bandname), stayband_weight))
 
-    if n_obs_template is not None:
-        if bandname2 is not None:
-            bfs.append(
-                (
-                    bf.NObsPerYearBasisFunction(
-                        bandname=bandname,
-                        nside=nside,
-                        footprint=footprints.get_footprint(bandname),
-                        n_obs=n_obs_template[bandname],
-                        season=season,
-                        season_start_hour=season_start_hour,
-                        season_end_hour=season_end_hour,
-                    ),
-                    template_weights[bandname] / 2.0,
-                )
-            )
-            bfs.append(
-                (
-                    bf.NObsPerYearBasisFunction(
-                        bandname=bandname2,
-                        nside=nside,
-                        footprint=footprints.get_footprint(bandname2),
-                        n_obs=n_obs_template[bandname2],
-                        season=season,
-                        season_start_hour=season_start_hour,
-                        season_end_hour=season_end_hour,
-                    ),
-                    template_weights[bandname2] / 2.0,
-                )
-            )
-        else:
-            bfs.append(
-                (
-                    bf.NObsPerYearBasisFunction(
-                        bandname=bandname,
-                        nside=nside,
-                        footprint=footprints.get_footprint(bandname),
-                        n_obs=n_obs_template[bandname],
-                        season=season,
-                        season_start_hour=season_start_hour,
-                        season_end_hour=season_end_hour,
-                    ),
-                    template_weights[bandname],
-                )
-            )
-
     bandnames = [fn for fn in [bandname, bandname2] if fn is not None]
     bfs.append((bf.BandLoadedBasisFunction(bandnames=bandnames), 0))
 
@@ -350,6 +391,7 @@ def standard_bf(
 def gen_template_surveys(
     footprints: Footprints,
     nside: int = DEFAULT_NSIDE,
+    seeing_limit: float: 1.3,
     band1s: list[str] = ["u", "g", "r", "i", "z", "y"],
     dark_only: list[str] = ["u", "g"],
     ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
@@ -498,14 +540,16 @@ def gen_template_surveys(
             bfs.append((bf.MoonAltLimitBasisFunction(alt_limit=-5), 0.0))
 
         # limit to first year
-        bfs.append((bf.OnlyBeforeNightBasisFunction(night_max=366), 0.0))
+        # bfs.append((bf.OnlyBeforeNightBasisFunction(night_max=366), 0.0))
 
-        # Mask anything observed n_obs_template times
-        # XXX--Probably need an image quality cut of some kind here?
+        bfs.append((MaskPoorSeeing(bandname, nside=nside, seeing_limit=seeing_limit), 0))
+
+        # Mask anything observed n_obs_template times resseting each season
         bfs.append(
             (
                 bf.MaskAfterNObsBasisFunction(
-                    nside=nside, n_max=n_obs_template[bandname], bandname=bandname
+                    nside=nside, n_max=n_obs_template[bandname], bandname=bandname,
+                    seeing_limit=seeing_limit,
                 ),
                 0.0,
             )
