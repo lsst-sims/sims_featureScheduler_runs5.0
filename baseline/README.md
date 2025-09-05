@@ -14,3 +14,7 @@ for 5.0.1
  * Added update_conditions, resulting in more ToO observations getting scheduled
  * Shifted survey start 0.5 days to not start in the middle of the night
  
+
+ * Slight update to DDF dithering rng
+
+ 

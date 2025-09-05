@@ -22,6 +22,7 @@ from rubin_scheduler.scheduler.schedulers import CoreScheduler, SimpleBandSched
 from rubin_scheduler.scheduler.targetofo import gen_all_events
 from rubin_scheduler.scheduler.utils import (
     CurrentAreaMap,
+    Footprint,
     ObservationArray,
     make_rolling_footprints,
 )
@@ -38,10 +39,10 @@ from generate_surveys import (
     ddf_surveys,
     gen_greedy_surveys,
     gen_long_gaps_survey,
+    gen_template_surveys,
     generate_blobs,
     generate_twi_blobs,
     generate_twilight_near_sun,
-    gen_template_surveys,
 )
 from roman_surveys import gen_roman_off_season, gen_roman_on_season
 
@@ -319,8 +320,20 @@ def gen_scheduler(
         gen_roman_off_season(nexp=NEXP, exptime=EXPTIME),
     ]
 
-    template_surveys = gen_template_surveys(footprints, nside=nside, nexp=NEXP, u_exptime=U_EXPTIME,
-    u_nexp=U_NEXP, n_obs_template = {"u": 4, "g": 4, "r": 4, "i": 4, "z": 4, "y": 4})
+    # Make the templates footprint
+    # XXX
+    template_fp = Footprint(SURVEY_START_MJD, sun_ra_start)
+    for key in footprints_hp_array.dtype.name:
+        template_fp.set_footprint(key, footprints_hp_array[key] * 0 + 1.0)
+
+    template_surveys = gen_template_surveys(
+        template_fp,
+        nside=nside,
+        nexp=NEXP,
+        u_exptime=U_EXPTIME,
+        u_nexp=U_NEXP,
+        n_obs_template={"u": 4, "g": 4, "r": 4, "i": 4, "z": 4, "y": 4},
+    )
 
     if too:
         too_scale = 1.0
@@ -344,10 +357,29 @@ def gen_scheduler(
             split_long=split_long,
             n_snaps=NEXP,
         )
-        surveys = [toos, roman_surveys, ddfs, template_surveys, long_gaps, blobs, twi_blobs, neo, greedy]
+        surveys = [
+            toos,
+            roman_surveys,
+            ddfs,
+            template_surveys,
+            long_gaps,
+            blobs,
+            twi_blobs,
+            neo,
+            greedy,
+        ]
 
     else:
-        surveys = [roman_surveys, ddfs, template_surveys, long_gaps, blobs, twi_blobs, neo, greedy]
+        surveys = [
+            roman_surveys,
+            ddfs,
+            template_surveys,
+            long_gaps,
+            blobs,
+            twi_blobs,
+            neo,
+            greedy,
+        ]
 
         sim_ToOs = None
         event_table = None

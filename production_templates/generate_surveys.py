@@ -17,6 +17,7 @@ import rubin_scheduler.scheduler.basis_functions as bf
 import rubin_scheduler.scheduler.detailers as detailers
 from astropy import units as u
 from astropy.coordinates import SkyCoord
+from rubin_scheduler.scheduler.features import BaseSurveyFeature
 from rubin_scheduler.scheduler.surveys import (
     BlobSurvey,
     GreedySurvey,
@@ -24,12 +25,15 @@ from rubin_scheduler.scheduler.surveys import (
     ScriptedSurvey,
 )
 from rubin_scheduler.scheduler.utils import ConstantFootprint, Footprints
-from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD, _hpid2_ra_dec, calc_season
+from rubin_scheduler.utils import (
+    DEFAULT_NSIDE,
+    SURVEY_START_MJD,
+    _hpid2_ra_dec,
+    calc_season,
+)
 
 from ddf_df_gen import generate_ddf_df
 from ddf_presched import generate_ddf_scheduled_obs
-
-from rubin_scheduler.scheduler import BaseSurveyFeature
 
 # Set up values to use as kwarg defaults.
 NEXP = 1
@@ -38,7 +42,6 @@ EXPTIME = 30.0
 U_EXPTIME = 38.0
 CAMERA_ROT_LIMITS = (-80.0, 80.0)
 SCIENCE_PROGRAM = "BLOCK-365"
-
 
 
 class NObservationsSeason(BaseSurveyFeature):
@@ -64,13 +67,20 @@ class NObservationsSeason(BaseSurveyFeature):
         compatibility. Will be removed in the future.
     """
 
-    def __init__(self, bandname=None, nside=DEFAULT_NSIDE, seeing_limit=1.3,
-                 mjd_start=SURVEY_START_MJD,
-                 scheduler_note=None, survey_name=None):
+    def __init__(
+        self,
+        bandname=None,
+        nside=DEFAULT_NSIDE,
+        seeing_limit=1.3,
+        mjd_start=SURVEY_START_MJD,
+        scheduler_note=None,
+        survey_name=None,
+    ):
         self.feature = np.zeros(hp.nside2npix(nside), dtype=float)
-
-        self.season = np.zeros(hp.nside2npix(nside), dtype=int) - 1000.
-        self.ra, self.dec = _hpid2_ra_dec(nside, np.arange(self.seasons.size))
+        self.seeing_limit = seeing_limit
+        self.mjd_start = mjd_start
+        self.season = np.zeros(hp.nside2npix(nside), dtype=int) - 1000.0
+        self.ra, self.dec = _hpid2_ra_dec(nside, np.arange(self.season.size))
         self.bandname = bandname
         if scheduler_note is None and survey_name is not None:
             self.scheduler_note = survey_name
@@ -83,15 +93,27 @@ class NObservationsSeason(BaseSurveyFeature):
 
     def add_observation(self, observation, indx=None):
         if self.bandname is None or observation["band"][0] in self.bandname:
-            if self.scheduler_note is None or observation["scheduler_note"][0] in self.scheduler_note:
+            if (
+                self.scheduler_note is None
+                or observation["scheduler_note"][0] in self.scheduler_note
+            ):
                 if observation["FWHMeff"] < self.seeing_limit:
-                    seasons = calc_season(np.degrees(self.ra[indx]), observation["mjd"],
-                                          mjd_start=self.mjd_start)
+                    seasons = np.ravel(
+                        np.floor(
+                            calc_season(
+                                np.degrees(self.ra[indx]),
+                                observation["mjd"],
+                                mjd_start=self.mjd_start,
+                            )
+                        )
+                    )
                     # Has the season changed anywhere? If so, reset count to zero and
                     # Update the current season there.
-                    changed_seasons_indx = np.where((self.season[indx] - seasons) != 0)[0]
+                    changed_seasons_indx = np.where((self.season[indx] - seasons) != 0)[
+                        0
+                    ]
                     if changed_seasons_indx.size > 0:
-                        self.feature[indx[changed_seasons_indx]] = 0
+                        self.feature[np.array(indx)[changed_seasons_indx]] = 0
                         self.season[indx] = seasons
 
                     self.feature[indx] += 1
@@ -103,6 +125,7 @@ class MaskPoorSeeing(bf.BaseBasisFunction):
         self.seeing_limit = seeing_limit
         self.result = np.zeros(hp.nside2npix(self.nside), dtype=float)
         self.bandname = bandname
+
     def __call__(self, conditions, indx=None):
         result = self.result.copy()
         to_mask = np.where(conditions.fwhm_eff[self.bandname] > self.seeing_limit)
@@ -110,7 +133,7 @@ class MaskPoorSeeing(bf.BaseBasisFunction):
         return result
 
 
-class MaskAfterNObsBasisFunction(bf.BaseBasisFunction):
+class MaskAfterNObsSeeingBasisFunction(bf.BaseBasisFunction):
     """Mask after a HEALpix has been observed N times.
 
     Parameters
@@ -121,12 +144,22 @@ class MaskAfterNObsBasisFunction(bf.BaseBasisFunction):
         The bandname. Default None uses all bands.
     """
 
-    def __init__(self, n_max=3, nside=DEFAULT_NSIDE, bandname=None,
-                 seeing_limit=1.3, mjd_start=SURVEY_START_MJD):
-        super(MaskAfterNObsBasisFunction, self).__init__(nside=nside)
+    def __init__(
+        self,
+        n_max=3,
+        nside=DEFAULT_NSIDE,
+        bandname=None,
+        seeing_limit=1.3,
+        mjd_start=SURVEY_START_MJD,
+    ):
+        super().__init__(nside=nside)
         self.n_max = n_max
-        self.survey_features["nobs"] = NObservationsSeason(nside=nside, bandname=bandname,
-                                                           mjd_start=mjd_start, seeing_limit=seeing_limit,)
+        self.survey_features["nobs"] = NObservationsSeason(
+            nside=nside,
+            bandname=bandname,
+            mjd_start=mjd_start,
+            seeing_limit=seeing_limit,
+        )
         self.result = np.zeros(hp.nside2npix(self.nside), dtype=float)
 
     def _calc_value(self, conditions, indx=None):
@@ -251,7 +284,6 @@ def standard_bf(
     stayband_weight: float = 3.0,
     footprints: Footprints | None = None,
     fiducial_fwhm: float = 1.3,
-    n_obs_template: dict | None = None,
     season: float = 365.25,
     season_start_hour: float = -4.0,
     season_end_hour: float = 2.0,
@@ -315,7 +347,7 @@ def standard_bf(
         (rubin_scheduler.scheduler.BasisFunction object, float)
 
     """
-    
+
     bfs = []
 
     if bandname2 is not None:
@@ -391,7 +423,7 @@ def standard_bf(
 def gen_template_surveys(
     footprints: Footprints,
     nside: int = DEFAULT_NSIDE,
-    seeing_limit: float: 1.3,
+    seeing_limit: float = 1.3,
     band1s: list[str] = ["u", "g", "r", "i", "z", "y"],
     dark_only: list[str] = ["u", "g"],
     ignore_obs: str | list[str] = ["DD", "twilight_near_sun"],
@@ -512,7 +544,6 @@ def gen_template_surveys(
                 bandname=bandname,
                 bandname2=None,
                 footprints=footprints,
-                n_obs_template=n_obs_template,
             )
         )
 
@@ -542,13 +573,17 @@ def gen_template_surveys(
         # limit to first year
         # bfs.append((bf.OnlyBeforeNightBasisFunction(night_max=366), 0.0))
 
-        bfs.append((MaskPoorSeeing(bandname, nside=nside, seeing_limit=seeing_limit), 0))
+        bfs.append(
+            (MaskPoorSeeing(bandname, nside=nside, seeing_limit=seeing_limit), 0)
+        )
 
         # Mask anything observed n_obs_template times resseting each season
         bfs.append(
             (
-                bf.MaskAfterNObsBasisFunction(
-                    nside=nside, n_max=n_obs_template[bandname], bandname=bandname,
+                MaskAfterNObsSeeingBasisFunction(
+                    nside=nside,
+                    n_max=n_obs_template[bandname],
+                    bandname=bandname,
                     seeing_limit=seeing_limit,
                 ),
                 0.0,
@@ -611,9 +646,6 @@ def blob_for_long(
     footprint_weight: float = 1.5,
     slewtime_weight: float = 3.0,
     stayband_weight: float = 3.0,
-    template_weight: float = 12.0,
-    u_template_weight: float = 50.0,
-    g_template_weight: float = 50.0,
     night_pattern: list[bool] = [True, True],
     time_after_twi: float = 30.0,
     blob_names: list[str] = [],
@@ -740,11 +772,7 @@ def blob_for_long(
                 footprint_weight=footprint_weight,
                 slewtime_weight=slewtime_weight,
                 stayband_weight=stayband_weight,
-                template_weight=template_weight,
-                u_template_weight=u_template_weight,
-                g_template_weight=g_template_weight,
                 footprints=footprints,
-                n_obs_template=n_obs_template,
                 season=season,
                 season_start_hour=season_start_hour,
                 season_end_hour=season_end_hour,
@@ -835,8 +863,6 @@ def gen_long_gaps_survey(
     HA_min: float = 12,
     HA_max: float = 24 - 3.5,
     time_after_twi: float = 120,
-    u_template_weight: float = 50.0,
-    g_template_weight: float = 50.0,
     science_program: str = SCIENCE_PROGRAM,
     blob_survey_params: dict | None = None,
     safety_mask_params: dict | None = None,
@@ -902,8 +928,6 @@ def gen_long_gaps_survey(
             time_after_twi=time_after_twi,
             HA_min=HA_min,
             HA_max=HA_max,
-            u_template_weight=u_template_weight,
-            g_template_weight=g_template_weight,
             blob_names=blob_names,
             science_program=science_program,
             blob_survey_params=blob_survey_params,
@@ -1021,11 +1045,7 @@ def gen_greedy_surveys(
                 footprint_weight=footprint_weight,
                 slewtime_weight=slewtime_weight,
                 stayband_weight=stayband_weight,
-                template_weight=0,
-                u_template_weight=0,
-                g_template_weight=0,
                 footprints=footprints,
-                n_obs_template=None,
                 strict=False,
             )
         )
@@ -1091,9 +1111,6 @@ def generate_blobs(
     footprint_weight: float = 1.5,
     slewtime_weight: float = 3.0,
     stayband_weight: float = 3.0,
-    template_weight: float = 12.0,
-    u_template_weight: float = 50.0,
-    g_template_weight: float = 50.0,
     repeat_weight: float = -20,
     good_seeing: dict = {"g": 3, "r": 3, "i": 3},
     good_seeing_weight: float = 3.0,
@@ -1223,11 +1240,7 @@ def generate_blobs(
                 footprint_weight=footprint_weight,
                 slewtime_weight=slewtime_weight,
                 stayband_weight=stayband_weight,
-                template_weight=template_weight,
-                u_template_weight=u_template_weight,
-                g_template_weight=g_template_weight,
                 footprints=footprints,
-                n_obs_template=n_obs_template,
                 season=season,
                 season_start_hour=season_start_hour,
                 season_end_hour=season_end_hour,
@@ -1370,7 +1383,6 @@ def generate_twi_blobs(
     footprint_weight: float = 1.5,
     slewtime_weight: float = 3.0,
     stayband_weight: float = 3.0,
-    template_weight: float = 12.0,
     repeat_weight: float = -1,
     scheduled_respect: float = 15.0,
     night_pattern: list[bool] | None = None,
@@ -1490,11 +1502,7 @@ def generate_twi_blobs(
                 footprint_weight=footprint_weight,
                 slewtime_weight=slewtime_weight,
                 stayband_weight=stayband_weight,
-                template_weight=template_weight,
-                u_template_weight=0,
-                g_template_weight=0,
                 footprints=footprints,
-                n_obs_template=n_obs_template,
                 season=season,
                 season_start_hour=season_start_hour,
                 season_end_hour=season_end_hour,
