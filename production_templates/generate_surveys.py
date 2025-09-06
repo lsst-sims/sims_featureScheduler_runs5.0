@@ -44,6 +44,10 @@ CAMERA_ROT_LIMITS = (-80.0, 80.0)
 SCIENCE_PROGRAM = "BLOCK-365"
 
 
+
+
+
+
 class NObservationsSeason(BaseSurveyFeature):
     """
     Track the number of observations that have been made at each healpix.
@@ -288,6 +292,7 @@ def standard_bf(
     season_start_hour: float = -4.0,
     season_end_hour: float = 2.0,
     strict: bool = True,
+    seeing_limit: float | None = None
 ) -> list[tuple[bf.BaseBasisFunction, float]]:
     """Generate the standard basis functions that are shared by blob surveys
 
@@ -375,6 +380,7 @@ def standard_bf(
                     footprint=footprints,
                     out_of_bounds_val=np.nan,
                     nside=nside,
+                    seeing_limit=seeing_limit,
                 ),
                 footprint_weight / 2.0,
             )
@@ -386,6 +392,7 @@ def standard_bf(
                     footprint=footprints,
                     out_of_bounds_val=np.nan,
                     nside=nside,
+                    seeing_limit=seeing_limit,
                 ),
                 footprint_weight / 2.0,
             )
@@ -398,6 +405,7 @@ def standard_bf(
                     footprint=footprints,
                     out_of_bounds_val=np.nan,
                     nside=nside,
+                    seeing_limit=seeing_limit,
                 ),
                 footprint_weight,
             )
@@ -544,6 +552,7 @@ def gen_template_surveys(
                 bandname=bandname,
                 bandname2=None,
                 footprints=footprints,
+                seeing_limit=seeing_limit,
             )
         )
 
@@ -577,7 +586,7 @@ def gen_template_surveys(
             (MaskPoorSeeing(bandname, nside=nside, seeing_limit=seeing_limit), 0)
         )
 
-        # Mask anything observed n_obs_template times resseting each season
+        # Mask anything observed n_obs_template times reseting each season
         bfs.append(
             (
                 MaskAfterNObsSeeingBasisFunction(
