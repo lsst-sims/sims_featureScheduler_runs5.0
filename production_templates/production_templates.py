@@ -323,7 +323,10 @@ def gen_scheduler(
     # Make the templates footprint
     template_fp = Footprint(SURVEY_START_MJD, sun_ra_start)
     for key in footprints_hp_array.dtype.names:
-        template_fp.set_footprint(key, footprints_hp_array[key] * 0 + 1.0)
+        indx = np.where(footprints_hp_array[key] > 0)[0]
+        tmp_fp = footprints_hp_array[key] * 0 + np.nan
+        tmp_fp[indx] = 1
+        template_fp.set_footprint(key, tmp_fp)
 
     template_surveys = gen_template_surveys(
         template_fp,
