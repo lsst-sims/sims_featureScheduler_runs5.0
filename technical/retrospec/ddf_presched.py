@@ -9,8 +9,6 @@ import os
 import warnings
 
 import numpy as np
-import numpy.typing as npt
-import pandas as pd
 from rubin_scheduler.data import get_data_dir
 from rubin_scheduler.scheduler.utils import ScheduledObservationArray
 from rubin_scheduler.site_models import Almanac
@@ -18,15 +16,15 @@ from rubin_scheduler.utils import SURVEY_START_MJD, calc_season, ddf_locations
 
 
 def ddf_slopes(
-    ddf_name: str,
-    raw_obs: npt.NDArray,
-    night_season: npt.NDArray,
-    season_seq: int = 30,
-    min_season_length: float = 0,
-    boost_early_factor: float | None = None,
-    boost_factor_third: float | None = None,
-    boost_factor_fractional: float | None = None,
-) -> npt.NDArray:
+    ddf_name,
+    raw_obs,
+    night_season,
+    season_seq=30,
+    min_season_length=0,
+    boost_early_factor=None,
+    boost_factor_third=None,
+    boost_factor_fractional=None,
+):
     """
     Let's make custom slopes for each DDF
 
@@ -111,11 +109,7 @@ def ddf_slopes(
     return cumulative_desired
 
 
-def match_cumulative(
-    cumulative_desired: npt.NDArray,
-    mask: npt.NDArray | None = None,
-    no_duplicate: bool = True,
-) -> npt.NDArray:
+def match_cumulative(cumulative_desired, mask=None, no_duplicate=True):
     """Generate a schedule that tries to match the desired cumulative
     distribution given a mask
 
@@ -173,28 +167,28 @@ def match_cumulative(
 
 
 def optimize_ddf_times(
-    ddf_name: str,
-    ddf_RA: float,
-    ddf_grid: float,
-    sun_limit: float = -18,
-    sequence_time: float = 60.0,
-    airmass_limit: float = 2.5,
-    sky_limit: float | None = None,
-    g_depth_limit: float = 23.5,
-    offseason_length: float = 73.05,
-    low_season_frac: float = 0,
-    low_season_rate: float = 0.3,
-    survey_start_mjd: float = SURVEY_START_MJD,
-    season_seq: int = 30,
-    boost_early_factor: float | None = None,
-    boost_factor_third: float | None = None,
-    boost_factor_fractional: float | None = None,
-    only_season: int | None = None,
-    mask_even_odd: bool | None = None,
+    ddf_name,
+    ddf_RA,
+    ddf_grid,
+    sun_limit=-18,
+    sequence_time=60.0,
+    airmass_limit=2.5,
+    sky_limit=None,
+    g_depth_limit=23.5,
+    offseason_length=73.05,
+    low_season_frac=0,
+    low_season_rate=0.3,
+    mjd_start=SURVEY_START_MJD,
+    season_seq=30,
+    boost_early_factor=None,
+    boost_factor_third=None,
+    boost_factor_fractional=None,
+    only_season=None,
+    mask_even_odd=None,
     moon_illum_lt=None,
     moon_illum_gt=None,
-    early_late_season_only: bool = False,
-) -> tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
+    early_late_season_only=False,
+):
     """
 
     Parameters
@@ -249,7 +243,7 @@ def optimize_ddf_times(
         of the season. During the standard season, the 'rate' is 1.
         This is used in `ddf_slopes` to define the desired number of
         cumulative observations for each DDF over time.
-    survey_start_mjd : `float`, optional
+    mjd_start : `float`, optional
         The MJD of the start of the survey. Used to identify the
         starting point when counting seasons.
         Default SURVEY_START_MJD.
@@ -335,7 +329,7 @@ def optimize_ddf_times(
     night_mjd = ddf_grid["mjd"][indx]
 
     # Calculate season values for each night.
-    night_season = calc_season(ddf_RA, night_mjd, survey_start_mjd)
+    night_season = calc_season(ddf_RA, night_mjd, mjd_start)
 
     # convert so we start at season 0 no matter what.
     night_season = night_season - np.floor(np.min(night_season))
@@ -429,27 +423,26 @@ def optimize_ddf_times(
 
 
 def generate_ddf_scheduled_obs(
-    configs_df: pd.DataFrame,
-    data_file: str | None = None,
-    mjd_tol: float = 15.0,
-    expt: dict = {"u": 38.0, "g": 29.2, "r": 29.2, "i": 29.2, "z": 29.2, "y": 29.2},
-    alt_min: float = 25.0,
-    alt_max: float = 85.0,
-    HA_min: float = 21.0,
-    HA_max: float = 3.0,
-    sun_alt_max: float = -18.0,
-    moon_min_distance: float = 25.0,
-    dist_tol: float = 3.0,
-    bands: str = "ugrizy",
-    nsnaps: dict = {"u": 1, "g": 2, "r": 2, "i": 2, "z": 2, "y": 2},
-    survey_start_mjd: float = SURVEY_START_MJD,
-    survey_length: float = 10.0,
-    low_season_frac: float = 0.0,
-    low_season_rate: float = 0.3,
-    overhead: float = 2.0,
-    illum_limit: float = 40.0,
-    science_program: str | None = None,
-) -> ScheduledObservationArray:
+    configs_df,
+    data_file=None,
+    mjd_tol=15,
+    expt={"u": 38, "g": 29.2, "r": 29.2, "i": 29.2, "z": 29.2, "y": 29.2},
+    alt_min=25,
+    alt_max=85,
+    HA_min=21.0,
+    HA_max=3.0,
+    sun_alt_max=-18,
+    moon_min_distance=25.0,
+    dist_tol=3.0,
+    bands="ugrizy",
+    nsnaps={"u": 1, "g": 2, "r": 2, "i": 2, "z": 2, "y": 2},
+    mjd_start=SURVEY_START_MJD,
+    survey_length=10.0,
+    low_season_frac=0,
+    low_season_rate=0.3,
+    overhead=2.0,
+    illum_limit=40.0,
+):
     """
 
     Parameters
@@ -483,7 +476,7 @@ def generate_ddf_scheduled_obs(
         The band names.
     nsnaps : `list of ints` ([1, 2, 2, 2, 2, 2])
         The number of snaps to use per band
-    survey_start_mjd : `float`
+    mjd_start : `float`
         Starting MJD of the survey. Default None, which calls
         rubin_sim.utils.SURVEY_START_MJD
     survey_length : `float`
@@ -529,16 +522,14 @@ def generate_ddf_scheduled_obs(
     ddf_data = np.load(data_file)
     ddf_grid = ddf_data["ddf_grid"].copy()
 
-    mjd_max = survey_start_mjd + survey_length * 365.25
+    mjd_max = mjd_start + survey_length * 365.25
 
     # check if our pre-computed grid is over the time range we think
     # we are scheduling for
-    if (ddf_grid["mjd"].min() > survey_start_mjd) | (ddf_grid["mjd"].max() < mjd_max):
+    if (ddf_grid["mjd"].min() > mjd_start) | (ddf_grid["mjd"].max() < mjd_max):
         warnings.warn("Pre-computed DDF properties don't match requested survey times")
 
-    in_range = np.where(
-        (ddf_grid["mjd"] >= survey_start_mjd) & (ddf_grid["mjd"] <= mjd_max)
-    )
+    in_range = np.where((ddf_grid["mjd"] >= mjd_start) & (ddf_grid["mjd"] <= mjd_max))
     ddf_grid = ddf_grid[in_range]
 
     # can loop over each row to generate the observations that
@@ -600,7 +591,7 @@ def generate_ddf_scheduled_obs(
                 # XXX--magic number should move to config file
                 low_season_frac=80.0 / 200.0,
                 low_season_rate=1.0,
-                survey_start_mjd=survey_start_mjd,
+                mjd_start=mjd_start,
                 season_seq=n_sequences,
                 only_season=row["season"],
                 mask_even_odd=mask_even_odd,
@@ -621,7 +612,7 @@ def generate_ddf_scheduled_obs(
                 offseason_length=offseason_length,
                 low_season_frac=0,
                 low_season_rate=0.3,
-                survey_start_mjd=survey_start_mjd,
+                mjd_start=mjd_start,
                 season_seq=n_sequences,
                 only_season=row["season"],
                 mask_even_odd=mask_even_odd,
@@ -644,7 +635,7 @@ def generate_ddf_scheduled_obs(
                     obs["band"] = bandname
                     obs["nexp"] = nsnaps[bandname]
                     obs["scheduler_note"] = "DD:%s" % ddf_name
-                    obs["target_name"] = ddf_name
+                    obs["target_name"] = "DD:%s" % ddf_name
                     obs["science_program"] = "DD"
                     obs["observation_reason"] = "FBS"
 
@@ -669,8 +660,8 @@ def generate_ddf_scheduled_obs(
                     obs["band"] = bandname
                     obs["nexp"] = nsnaps[bandname]
                     obs["scheduler_note"] = "DD:%s" % ddf_name.replace("_a", "_b")
-                    obs["target_name"] = ddf_name.replace("_a", "_b")
-                    obs["science_program"] = science_program
+                    obs["target_name"] = "DD:%s" % ddf_name.replace("_a", "_b")
+                    obs["science_program"] = "DD"
                     obs["observation_reason"] = "FBS"
 
                     obs["mjd_tol"] = mjd_tol
@@ -694,8 +685,8 @@ def generate_ddf_scheduled_obs(
                     obs["band"] = bandname
                     obs["nexp"] = nsnaps[bandname]
                     obs["scheduler_note"] = "DD:%s" % ddf_name
-                    obs["target_name"] = ddf_name
-                    obs["science_program"] = science_program
+                    obs["target_name"] = "DD:%s" % ddf_name
+                    obs["science_program"] = "DD"
                     obs["observation_reason"] = "FBS"
 
                     obs["mjd_tol"] = mjd_tol

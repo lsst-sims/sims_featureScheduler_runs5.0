@@ -1258,6 +1258,7 @@ def ddf_surveys(
         "y": STANDARD_EXP_TIME,
     },
     nsnaps={"u": 1, "g": 1, "r": 1, "i": 1, "z": 1, "y": 1},
+    mjd_start=SURVEY_START_MJD,
 ):
     """Generate surveys for DDF observations
 
@@ -1278,7 +1279,8 @@ def ddf_surveys(
 
     ddf_dataframe = generate_ddf_df()
 
-    obs_array = generate_ddf_scheduled_obs(ddf_dataframe, expt=expt, nsnaps=nsnaps)
+    obs_array = generate_ddf_scheduled_obs(ddf_dataframe, expt=expt, nsnaps=nsnaps,
+                                           mjd_start=mjd_start)
 
     survey1 = ScriptedSurvey(
         [bf.AvoidDirectWind(nside=nside)], nside=nside, detailers=detailers
@@ -1717,6 +1719,7 @@ def gen_scheduler(args):
     ddfs = ddf_surveys(
         detailers=details,
         nside=nside,
+        mjd_start=mjd_start,
     )
 
     greedy = gen_greedy_surveys(nside, nexp=nexp, footprints=footprints)
@@ -1753,7 +1756,9 @@ def gen_scheduler(args):
 
     if too:
         too_scale = 1.0
-        sim_ToOs, event_table = gen_all_events(scale=too_scale, nside=nside)
+        sim_ToOs, event_table = gen_all_events(scale=too_scale, nside=nside, mjd_start=mjd_start,
+                                               O5_start_mjd=mjd_start+750, 
+                                               O5_end_mjd=mjd_start+945+750)
         camera_rot_limits = [-80.0, 80.0]
         detailer_list = []
         detailer_list.append(
