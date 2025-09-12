@@ -644,9 +644,9 @@ def generate_ddf_scheduled_obs(
                     obs["band"] = bandname
                     obs["nexp"] = nsnaps[bandname]
                     obs["scheduler_note"] = "DD:%s" % ddf_name
-                    obs["target_name"] = ddf_name
+                    obs["target_name"] = "ddf_" + ddf_name.lower()
                     obs["science_program"] = "DD"
-                    obs["observation_reason"] = "FBS"
+                    obs["observation_reason"] = "ddf_" + ddf_name.lower()
 
                     obs["mjd_tol"] = mjd_tol
                     obs["dist_tol"] = dist_tol
@@ -669,9 +669,9 @@ def generate_ddf_scheduled_obs(
                     obs["band"] = bandname
                     obs["nexp"] = nsnaps[bandname]
                     obs["scheduler_note"] = "DD:%s" % ddf_name.replace("_a", "_b")
-                    obs["target_name"] = ddf_name.replace("_a", "_b")
+                    obs["target_name"] = "ddf_" + ddf_name.replace("_a", "_b").lower()
                     obs["science_program"] = science_program
-                    obs["observation_reason"] = "FBS"
+                    obs["observation_reason"] = "ddf_" + ddf_name.lower()
 
                     obs["mjd_tol"] = mjd_tol
                     obs["dist_tol"] = dist_tol
@@ -694,9 +694,9 @@ def generate_ddf_scheduled_obs(
                     obs["band"] = bandname
                     obs["nexp"] = nsnaps[bandname]
                     obs["scheduler_note"] = "DD:%s" % ddf_name
-                    obs["target_name"] = ddf_name
+                    obs["target_name"] = "ddf_" + ddf_name.lower()
                     obs["science_program"] = science_program
-                    obs["observation_reason"] = "FBS"
+                    obs["observation_reason"] = "ddf_" + ddf_name.lower()
 
                     obs["mjd_tol"] = mjd_tol
                     obs["dist_tol"] = dist_tol
