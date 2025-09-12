@@ -44,13 +44,15 @@ from rubin_scheduler.scheduler.utils import (
     make_rolling_footprints,
 )
 from rubin_scheduler.site_models import Almanac
-from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD, _hpid2_ra_dec
+from rubin_scheduler.utils import DEFAULT_NSIDE, _hpid2_ra_dec
 
 from ddf_df_gen import generate_ddf_df
 from ddf_presched import generate_ddf_scheduled_obs
 
 STANDARD_EXP_TIME = 30.0
 STANDARD_EXP_TIME_u = 38.0
+
+SURVEY_START_MJD = 55197
 
 # So things don't fail on hyak
 iers.conf.auto_download = False
@@ -1630,7 +1632,7 @@ def gen_scheduler(args):
 
     # Be sure to also update and regenerate DDF grid save file
     # if changing mjd_start
-    mjd_start = 55197 # 2010 # SURVEY_START_MJD + mjd_plus
+    mjd_start = SURVEY_START_MJD + mjd_plus
 
     fileroot, extra_info = set_run_info(
         dbroot=dbroot,
@@ -1787,7 +1789,7 @@ def gen_scheduler(args):
         event_table = None
         fileroot = fileroot.replace("baseline", "no_too")
 
-    scheduler = CoreScheduler(surveys, nside=nside)
+    scheduler = CoreScheduler(surveys, nside=nside, survey_start_mjd=SURVEY_START_MJD)
 
     if args.setup_only:
         return scheduler
