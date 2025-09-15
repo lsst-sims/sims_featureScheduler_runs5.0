@@ -52,7 +52,7 @@ from ddf_presched import generate_ddf_scheduled_obs
 STANDARD_EXP_TIME = 30.0
 STANDARD_EXP_TIME_u = 38.0
 
-SURVEY_START_MJD = 55197
+SURVEY_START_MJD = 57023
 
 # So things don't fail on hyak
 iers.conf.auto_download = False
