@@ -934,15 +934,6 @@ def gen_greedy_surveys(
             )
         )
 
-        # XXX-magic numbers
-        bfs.append(
-            (
-                bf.VisitRepeatBasisFunction(
-                    gap_min=0, gap_max=2 * 60.0, bandname=None, nside=nside, npairs=20
-                ),
-                repeat_weight,
-            )
-        )
         # Masks, give these 0 weight
         bfs.append(
             (
@@ -1139,16 +1130,6 @@ def generate_blobs(
                 season=season,
                 season_start_hour=season_start_hour,
                 season_end_hour=season_end_hour,
-            )
-        )
-
-        # XXX--what is this doing? magic numbers.
-        bfs.append(
-            (
-                bf.VisitRepeatBasisFunction(
-                    gap_min=0, gap_max=3 * 60.0, bandname=None, nside=nside, npairs=20
-                ),
-                repeat_weight,
             )
         )
 
@@ -1403,20 +1384,9 @@ def generate_twi_blobs(
             )
         )
 
-        # XXX--magic numbers. Kinda nebulous why here.
-        bfs.append(
-            (
-                bf.VisitRepeatBasisFunction(
-                    gap_min=0, gap_max=2 * 60.0, bandname=None, nside=nside, npairs=20
-                ),
-                repeat_weight,
-            )
-        )
-
         # Make sure we respect scheduled observations
         bfs.append((bf.TimeToScheduledBasisFunction(time_needed=scheduled_respect), 0))
         # Masks, give these 0 weight
-        # XXX-magic numbers
         shadow_minutes = pair_time * 2 + pair_pad
         safety_mask_params["shadow_minutes"] = shadow_minutes
         bfs.append(

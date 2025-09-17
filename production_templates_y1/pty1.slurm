@@ -8,11 +8,11 @@
 #SBATCH --error=output-%j.txt
 #
 #SBATCH --nodes=1                       # Number of nodes
-#SBATCH --ntasks=5
+#SBATCH --ntasks=7
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=20g
 #
-#SBATCH --time=2-14:10:00
+#SBATCH --time=3-14:10:00
 #SBATCH --chdir=/sdf/data/rubin/shared/fbs_sims/sims_featureScheduler_runs5.0/production_templates_y1
 #SBATCH --mail-user=yoachim@uw.edu
 #
@@ -25,7 +25,7 @@ source ~/anaconda3/etc/profile.d/conda.sh
 conda activate rubin12
 export OPENBLAS_NUM_THREADS=1
 
-python production_templates_y1.py
+cat pty1.sh | parallel -j 2
 
 
 rm maf.sh
@@ -38,4 +38,4 @@ ls *.1_10yrs.db | xargs -I'{}' echo "metadata_dir --db '{}'" >> maf.sh
 generate_ss
 cat ss_script.sh >> maf.sh
  
-cat maf.sh | parallel -j 5
+cat maf.sh | parallel -j 7
