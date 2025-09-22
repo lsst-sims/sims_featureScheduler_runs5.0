@@ -1505,8 +1505,6 @@ def ddf_surveys(
         nsnaps=nexp,
         survey_start_mjd=survey_start,
         survey_length=survey_length,
-        # XXX--magic number
-        sun_alt_max=-24,
         science_program=science_program,
     )
 

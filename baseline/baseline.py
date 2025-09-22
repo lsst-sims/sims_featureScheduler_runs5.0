@@ -1711,6 +1711,7 @@ def gen_scheduler(args):
         dither_detailer,
         u_detailer,
         detailers.BandSortDetailer(),
+        detailers.TruncatePreTwiDetailer(),
         detailers.LabelRegionsAndDDFs(),
     ]
 
