@@ -13,7 +13,7 @@
 #SBATCH --mem-per-cpu=20g
 #
 #SBATCH --time=2-14:10:00
-#SBATCH --chdir=/sdf/data/rubin/shared/fbs_sims/sims_featureScheduler_runs5.0/baseline
+#SBATCH --chdir=/sdf/data/rubin/shared/fbs_sims/sims_featureScheduler_runs5.0/poor_weather
 #SBATCH --mail-user=yoachim@uw.edu
 #
 ##turn on e-mail notification
@@ -25,7 +25,7 @@ source ~/anaconda3/etc/profile.d/conda.sh
 conda activate rubin12
 export OPENBLAS_NUM_THREADS=1
 
-python baseline.py 
+cat pw.sh | parallel -j 2
 
 
 # rm maf.sh
