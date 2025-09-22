@@ -23,7 +23,7 @@ from rubin_scheduler.scheduler.surveys import (
 from rubin_scheduler.scheduler.utils import (
     ConstantFootprint,
     Footprints,
-    ecliptic_target,
+    ecliptic_area,
 )
 from rubin_scheduler.utils import DEFAULT_NSIDE, SURVEY_START_MJD
 
@@ -1633,7 +1633,7 @@ def generate_twilight_near_sun(
         Default 25.
     """
     survey_name = "twilight_near_sun"
-    footprint = ecliptic_target(nside=nside, mask=footprint_mask)
+    footprint = ecliptic_area(nside=nside, mask=footprint_mask)
     constant_fp = ConstantFootprint(nside=nside)
     for bandname in bands:
         constant_fp.set_footprint(bandname, footprint)
