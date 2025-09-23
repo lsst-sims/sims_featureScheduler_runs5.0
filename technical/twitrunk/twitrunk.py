@@ -1281,7 +1281,8 @@ def ddf_surveys(
     obs_array = generate_ddf_scheduled_obs(ddf_dataframe, expt=expt, nsnaps=nsnaps)
 
     survey1 = ScriptedSurvey(
-        [bf.AvoidDirectWind(nside=nside)], nside=nside, detailers=detailers
+        [bf.AvoidDirectWind(nside=nside)], nside=nside, detailers=detailers,
+        before_twi_check=False,
     )
     survey1.set_script(obs_array)
 

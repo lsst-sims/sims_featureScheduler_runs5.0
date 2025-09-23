@@ -7,8 +7,8 @@
 #SBATCH --output=output-%j.txt
 #SBATCH --error=output-%j.txt
 #
-#SBATCH --nodes=3                       # Number of nodes
-#SBATCH --ntasks=45
+#SBATCH --nodes=4                       # Number of nodes
+#SBATCH --ntasks=60
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=25g
 #
@@ -37,4 +37,4 @@ ls *10yrs.db | xargs -I'{}' echo "metadata_dir --db '{}'" >> maf.sh
 generate_ss
 cat ss_script.sh >> maf.sh
 
-cat maf.sh | parallel -j 45
+cat maf.sh | parallel -j 60
