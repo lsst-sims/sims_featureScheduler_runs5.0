@@ -1626,13 +1626,14 @@ def run_sched(
     """Run survey"""
     n_visit_limit = None
     fs = SimpleBandSched(illum_limit=illum_limit)
-    observatory = ModelObservatory(nside=nside, mjd_start=mjd_start, sim_to_o=sim_to_o)
+
+    downtimes = make_downtimes(mjd_start)
+
+    observatory = ModelObservatory(nside=nside, mjd_start=mjd_start, sim_to_o=sim_to_o, downtimes=downtimes)
 
     tma_kwargs = tma_movement(percent=tma_performance)
     observatory.setup_telescope(**tma_kwargs)
     observatory.setup_camera(band_changetime=band_changetime, readtime=readtime)
-
-    downtimes = make_downtimes(mjd_start)
 
     observatory, scheduler, observations = sim_runner(
         observatory,
@@ -1646,7 +1647,6 @@ def run_sched(
         band_scheduler=fs,
         event_table=event_table,
         snapshot_dir=snapshot_dir,
-        downtimes=downtimes,
     )
 
     return observatory, scheduler, observations
