@@ -1600,7 +1600,7 @@ def make_downtimes(mjd_start):
                 downtimes[i]["end"] = new_end
                 downtimes[i + 1]["end"] = new_end
 
-        good = np.where((downtimes["end"] - np.rolldowntimes["end"], 1) != 0)
+        good = np.where(downtimes["end"] - np.roll(downtimes["end"], 1) != 0)
         downtimes = downtimes[good]
         diff = downtimes["start"][1:] - downtimes["end"][0:-1]
 
