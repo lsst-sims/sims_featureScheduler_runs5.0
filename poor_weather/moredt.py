@@ -1587,7 +1587,7 @@ def make_downtimes(mjd_start):
     new_dt["start"] = np.arange(0, 10, 1)*365.25 + mjd_start + 45
     new_dt["end"] = new_dt["start"] + 20
 
-    downtimes = np.concatenate(downtimes, new_dt)
+    downtimes = np.concatenate((downtimes, new_dt))
     downtimes.sort(order="start")
 
     # Make sure there aren't any overlapping downtimes
