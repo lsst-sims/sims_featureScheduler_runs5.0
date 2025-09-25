@@ -994,7 +994,7 @@ def generate_blobs(
     season_start_hour: float = -4.0,
     season_end_hour: float = 2.0,
     max_alt: float = 76.0,
-    seeing_fwhm_max: float = GOOD_SEEING_MAX,
+    seeing_fwhm_max: float = 0.8,
     m5_penalty_max: float = 0.5,
     m5_weight: float = 6.0,
     footprint_weight: float = 1.5,
