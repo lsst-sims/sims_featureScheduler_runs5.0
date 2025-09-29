@@ -1165,6 +1165,10 @@ def generate_blobs(
             )
         )
         detailer_list.append(detailers.CloseAltDetailer())
+        if (bandname == "u") | (bandname2 == "u"):
+            detailer_list.append(
+                                 detailers.BandNexp(bandname="u", nexp=U_NEXP, exptime=u_exptime)
+                                 )
         detailer_list.append(detailers.FlushForSchedDetailer())
         detailer_list.append(detailers.LabelRegionsAndDDFs())
         # List to hold tuples of (basis_function_object, weight)
